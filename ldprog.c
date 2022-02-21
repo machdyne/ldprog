@@ -53,6 +53,7 @@ void show_usage(char **argv) {
       " -f\twrite <image.bin> to flash starting at [hex_offset]\n" \
       " -v\tverify flash against <image.bin>\n" \
       " -d\tdump flash to file\n" \
+      " -e\tbulk erase entire flash\n" \
       " -t\ttest fpga\n" \
       " -r\treset fpga\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",
@@ -63,8 +64,10 @@ void show_usage(char **argv) {
 #define MEM_TYPE_TEST 1
 #define MEM_TYPE_SRAM 2
 #define MEM_TYPE_FLASH 3
+#define MODE_NONE 0
 #define MODE_READ 1
 #define MODE_WRITE 2
+#define MODE_ERASE 3
 #define ACTION_RESET 1
 
 int spi_swap = 0;
@@ -73,24 +76,25 @@ int main(int argc, char *argv[]) {
 
    int opt;
    int mem_type;
-	int mode;
+	int mode = MODE_NONE;
 	int actions = 0;
 
 	uint32_t flash_offset = 0;
 	uint32_t flash_size = 0;
 
-   while ((opt = getopt(argc, argv, "hsfrdt")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdet")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
          case 'f': mem_type = MEM_TYPE_FLASH; mode = MODE_WRITE; break;
          case 'd': mem_type = MEM_TYPE_FLASH; mode = MODE_READ; break;
+         case 'e': mem_type = MEM_TYPE_FLASH; mode = MODE_ERASE; break;
          case 't': mem_type = MEM_TYPE_TEST; break;
          case 'r': actions |= ACTION_RESET; break;
       }
    }
 
-   if (optind >= argc && !actions) {
+   if ((mode == MODE_READ || mode == MODE_WRITE) && optind >= argc) {
       show_usage(argv);
       return(1);
    }
@@ -197,7 +201,7 @@ int main(int argc, char *argv[]) {
 		printf(" flash status: 0x%.2x\n", flash_status());
 
 		// exit power down mode
-		printf("exiting powder down mode\n");
+		printf("exiting power down mode\n");
 		GPIO_WRITE(CSPI_SS, 0);
 		DELAY();
 		spi_cmd(0xab);
@@ -322,6 +326,64 @@ int main(int argc, char *argv[]) {
 		}
 
 		fclose(fp);
+
+	} else if (mem_type == MEM_TYPE_FLASH && mode == MODE_ERASE) {
+
+		spi_swap = 0;
+
+		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
+		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+
+		char fbuf[256];
+		int i = 0;
+		int flen = len;
+
+		// hold fpga in reset mode
+		GPIO_WRITE(CRESET, 0);
+		DELAY();
+
+		GPIO_WRITE(CSPI_SCK, 0);
+		GPIO_WRITE(CSPI_SS, 1);
+		DELAY();
+
+		printf(" flash status: 0x%.2x\n", flash_status());
+
+		// exit power down mode
+		printf("exiting power down mode\n");
+		GPIO_WRITE(CSPI_SS, 0);
+		DELAY();
+		spi_cmd(0xab);
+		DELAY();
+		GPIO_WRITE(CSPI_SS, 1);
+		usleep(5000);
+		printf(" flash status: 0x%.2x\n", flash_status());
+
+		flash_write_enable();
+		printf(" flash status: 0x%.2x\n", flash_status());
+
+		// global block unlock
+		printf("global block unlock ...\n");
+		GPIO_WRITE(CSPI_SS, 0);
+		DELAY();
+		spi_cmd(0x98);
+		DELAY();
+		GPIO_WRITE(CSPI_SS, 1);
+		usleep(5000);
+		printf(" flash status: 0x%.2x\n", flash_status());
+
+		// bulk erase
+		printf(" erasing flash ...\n");
+		flash_write_enable();
+
+		GPIO_WRITE(CSPI_SS, 0);
+		DELAY();
+		spi_cmd(0xc7);
+		DELAY();
+		GPIO_WRITE(CSPI_SS, 1);
+
+		flash_wait();
+
+		printf("done erasing.\n");
 
 	}
 

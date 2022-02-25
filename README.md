@@ -24,18 +24,31 @@ Display help:
   * [Brot FPGA Board](https://machdyne.com/product/brot-fpga-board/)
   * [Krume FPGA SOM](https://machdyne.com/product/krume-fpga-som/)
 
-## Supported Interfaces
+## Supported Interface Devices
 
-  * Raspiberry Pi GPIO
+  * Raspberry Pi
+  * Raspberry Pi Pico
+  * [Müsli](https://machdyne.com/product/musli-usb-pmod/)
 
 ### Raspberry Pi GPIO Default Wiring
 
-| Signal | GPIO# |
-| ------ | ----- |
-| CSPI\_SS | 25 |
-| CSPI\_SO | 9 |
-| CSPI\_SI | 10 |
-| CSPI\_SCK | 11 |
-| CRESET | 23 |
-| CDONE | 24 |
+| Signal | GPIO# | Target Pin |
+| ------ | ----- | ---------- |
+| CSPI\_SS | 25 | 1 |
+| CSPI\_SO | 9 | 4 |
+| CSPI\_SI | 10 | 3 |
+| CSPI\_SCK | 11 | 2 |
+| CRESET | 23 | 5 |
+| CDONE | 24 | 6 |
+
+### Müsli Default Wiring
+
+| Signal | GPIO# | Müsli Pin | Target Pin |
+| ------ | ----- | --------- | ---------- |
+| CSPI\_SS | 9 | 8 | 1 |
+| CSPI\_SO | 8 | 7 | 4 |
+| CSPI\_SI | 11 | 10 | 3 |
+| CSPI\_SCK | 10 | 9 | 2 |
+| CRESET | 3 | 4 | 5 |
+| CDONE | 2 | 3 | 6 |
 

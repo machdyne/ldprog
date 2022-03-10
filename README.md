@@ -50,7 +50,7 @@ Display help:
 
 #### Raspbery Pi 40-pin Header Pinout
 
-!(https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png)
+  <img src="https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png" width="50%">
 
 ### Müsli Default Wiring
 

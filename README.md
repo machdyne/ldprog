@@ -2,7 +2,16 @@
 
 Programming software for Lone Dynamics FPGA boards
 
-## Installation for use with Müsli (Ubuntu)
+## Overview
+
+ldprog can be used to program the configuration SRAM or flash on Lone Dynamics FPGA boards.
+
+There are two ways to use ldprog:
+
+  * Run ldprog on a Raspberry Pi and directly connect the target device to the Raspberry Pi GPIO pins
+  * Run ldprog on a Linux computer and use a USB interface device (see supported devices below)
+
+## Installation for use with Müsli or Raspberry Pi Pico (Ubuntu)
 
 ```
 apt-get install libusb-1.0-0-dev
@@ -33,9 +42,9 @@ Display help:
 
 ## Supported Interface Devices
 
-  * Raspberry Pi
-  * Raspberry Pi Pico
-  * [Müsli](https://machdyne.com/product/musli-usb-pmod/)
+  * Raspberry Pi (GPIO)
+  * Raspberry Pi Pico (USB)
+  * [Müsli](https://machdyne.com/product/musli-usb-pmod/) (USB)
 
 ### Raspberry Pi GPIO Default Wiring
 

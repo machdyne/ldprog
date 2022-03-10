@@ -1,5 +1,5 @@
-build:
-	gcc -Wall -DBACKEND_PIGPIO -o ldprog ldprog.c -lpigpio
+musli:
+	gcc -Wall -DBACKEND_LIBUSB -o ldprog ldprog.c -lusb-1.0
 
-clean:
-	rm -f ldprog
+gpio:
+	gcc -Wall -DBACKEND_PIGPIO -o ldprog ldprog.c -lpigpio

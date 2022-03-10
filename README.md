@@ -2,11 +2,18 @@
 
 Programming software for Lone Dynamics FPGA boards
 
-## Installation (Raspbian)
+## Installation for use with Müsli (Ubuntu)
+
+```
+apt-get install libusb-1.0-0-dev
+make musli
+```
+
+## Installation for use with Raspberry Pi GPIO (Raspbian)
 
 ```
 apt-get install pigpio
-make
+make gpio
 ```
 
 ## Usage
@@ -40,6 +47,10 @@ Display help:
 | CSPI\_SCK | 11 | 2 |
 | CRESET | 23 | 5 |
 | CDONE | 24 | 6 |
+
+#### Raspbery Pi 40-pin Header Pinout
+
+!(https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png)
 
 ### Müsli Default Wiring
 

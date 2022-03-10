@@ -10,23 +10,52 @@
 #include <strings.h>
 
 #ifdef BACKEND_PIGPIO
-#include <pigpio.h>
-#define GPIO_WRITE gpioWrite
-#define GPIO_READ gpioRead
-#define GPIO_SET_MODE gpioSetMode
+
+ #include <pigpio.h>
+ #define GPIO_WRITE gpioWrite
+ #define GPIO_READ gpioRead
+ #define GPIO_SET_MODE gpioSetMode
+
+ #define CSPI_SS	25
+ #define CSPI_SO	9
+ #define CSPI_SI	10
+ #define CSPI_SCK	11
+ #define CRESET	23
+ #define CDONE		24
+
+#elif BACKEND_LIBUSB
+
+ #include <libusb-1.0/libusb.h>
+ #define GPIO_WRITE musliWrite
+ #define GPIO_READ musliRead
+ #define GPIO_SET_MODE musliSetMode
+ #define PI_INPUT 0
+ #define PI_OUTPUT 1
+ #define USB_MFG_ID 0x2e8a
+ #define USB_DEV_ID 0x1025
+ #define CSPI_SS	9
+ #define CSPI_SO	8
+ #define CSPI_SI	11
+ #define CSPI_SCK	10
+ #define CDONE		2
+ #define CRESET	3
+ #define MUSLI_CMD_READY 0x00
+ #define MUSLI_CMD_CONFIG_PORT 0x01
+ #define MUSLI_CMD_CONFIG_PORT_PIN 0x02
+ #define MUSLI_CMD_GPIO_PUT_PIN 0x10
+ #define MUSLI_CMD_GPIO_GET_PIN 0x11
+ #define MUSLI_CMD_SPI_WRITE 0x20
+ #define MUSLI_CMD_SPI_READ 0x21
+ void musliSetMode(uint8_t pin, uint8_t dir);
+ void musliWrite(uint8_t pin, uint8_t bit);
+ uint8_t musliRead(uint8_t pin);
+ struct libusb_device_handle *usb_dh = NULL;
+
 #endif
 
 // --
 // CONFIGURATION:
 // --
-
-#define CSPI_SS	25
-#define CSPI_SO	9
-#define CSPI_SI	10
-#define CSPI_SCK	11
-#define CRESET		23
-#define CDONE		24
-
 #define RST_DELAY 250000
 #define QSPI_MODE false
 
@@ -107,7 +136,24 @@ int main(int argc, char *argv[]) {
    	flash_size = (uint32_t)strtol(argv[optind + 2], NULL, 16);
 	}
 
-	if (gpioInitialise() < 0) return 1;
+#ifdef BACKEND_PIGPIO
+	if (gpioInitialise() < 0) {
+		fprintf(stderr, "gpio init error");
+		exit(1);
+	}
+#elif BACKEND_LIBUSB
+	if (libusb_init(NULL) < 0) {
+		fprintf(stderr, "usb init error");
+		exit(1);
+	}
+
+	usb_dh = libusb_open_device_with_vid_pid(NULL, USB_MFG_ID, USB_DEV_ID);
+
+	if (!usb_dh) {
+		fprintf(stderr, "usb device error");
+		exit(1);
+	}
+#endif
 
 	GPIO_SET_MODE(CSPI_SS, PI_OUTPUT);
 	GPIO_SET_MODE(CRESET, PI_OUTPUT);
@@ -155,6 +201,8 @@ int main(int argc, char *argv[]) {
 		GPIO_WRITE(CSPI_SS, 0);
 		GPIO_WRITE(CRESET, 0);
 		usleep(RST_DELAY);
+		printf("cdone: %i\n", GPIO_READ(CDONE));
+
 		GPIO_WRITE(CRESET, 1);
 		usleep(RST_DELAY);
 
@@ -334,10 +382,6 @@ int main(int argc, char *argv[]) {
 		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
 		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
 
-		char fbuf[256];
-		int i = 0;
-		int flen = len;
-
 		// hold fpga in reset mode
 		GPIO_WRITE(CRESET, 0);
 		DELAY();
@@ -455,12 +499,51 @@ void spi_addr(uint32_t addr) {
 	}
 }
 
+#define MUSLI_BLK_SIZE 60
 void spi_write(void *buf, uint32_t len) {
+
+#ifdef BACKEND_LIBUSB
+  	int actual;
+	uint8_t lbuf[64];
+
+	uint32_t rlen = len;
+	uint32_t offset = 0;
+
+	for (int blk = 0; blk < len / MUSLI_BLK_SIZE; blk++) {
+
+		bzero(lbuf, 64);
+		lbuf[0] = MUSLI_CMD_SPI_WRITE;
+		lbuf[1] = MUSLI_BLK_SIZE;
+		if (buf != NULL)
+			memcpy(lbuf + 4, buf + offset, MUSLI_BLK_SIZE);
+  		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
+			&actual, 0);
+	  	printf("spi_write: %i/%d [%i/%i]\n", actual, 64, offset, len);
+
+		rlen -= 60;
+		offset += 60;
+
+	}
+
+	if (rlen) {
+		bzero(lbuf, 64);
+		lbuf[0] = MUSLI_CMD_SPI_WRITE;
+		lbuf[1] = rlen;
+		if (buf != NULL)
+			memcpy(lbuf + 4, buf + offset, rlen);
+  		int r = libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
+			&actual, 0);
+	  	printf("spi_write: %i\n", r);
+	}
+
+#else
 
 	uint8_t data_bit;
 	uint8_t data_byte;
 
 	for (int p = 0; p < len; p++) {
+
+		printf(" spi writing byte %i / %i\n", p, len);
 
 		if (buf != NULL)
 			data_byte = *(unsigned char *)(buf + p);
@@ -477,6 +560,8 @@ void spi_write(void *buf, uint32_t len) {
 
 	}
 
+#endif
+
 }
 
 void spi_read(void *buf, uint32_t len) {
@@ -491,7 +576,6 @@ void spi_read(void *buf, uint32_t len) {
 	}
 
 }
-
 
 uint8_t spi_read_byte(void) {
 
@@ -540,3 +624,48 @@ void flash_write_enable(void) {
 	GPIO_WRITE(CSPI_SS, 1);
 	usleep(5000);
 }
+
+// ---
+
+#ifdef BACKEND_LIBUSB
+
+// bit banging interface
+
+void musliSetMode(uint8_t pin, uint8_t dir) {
+   int actual;
+	uint8_t buf[64];
+	bzero(buf, 64);
+	buf[0] = MUSLI_CMD_CONFIG_PORT_PIN;
+	buf[1] = pin;
+	buf[2] = dir;
+   libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), buf, 64,
+      &actual, 0);
+}
+
+void musliWrite(uint8_t pin, uint8_t bit) {
+   int actual;
+	uint8_t buf[64];
+	bzero(buf, 64);
+	buf[0] = MUSLI_CMD_GPIO_PUT_PIN;
+	buf[1] = pin;
+	buf[2] = bit;
+   libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), buf, 64,
+      &actual, 0);
+}
+
+uint8_t musliRead(uint8_t pin) {
+   int actual;
+	uint8_t buf[64];
+	bzero(buf, 64);
+	buf[0] = MUSLI_CMD_GPIO_GET_PIN;
+	buf[1] = pin;
+   libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), buf, 64,
+      &actual, 0);
+
+   libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), buf, 64,
+      &actual, 0);
+
+	return buf[0];
+}
+
+#endif

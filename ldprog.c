@@ -40,12 +40,18 @@
  #define CDONE		2
  #define CRESET	3
  #define MUSLI_CMD_READY 0x00
- #define MUSLI_CMD_CONFIG_PORT 0x01
- #define MUSLI_CMD_CONFIG_PORT_PIN 0x02
- #define MUSLI_CMD_GPIO_PUT_PIN 0x10
- #define MUSLI_CMD_GPIO_GET_PIN 0x11
- #define MUSLI_CMD_SPI_WRITE 0x20
- #define MUSLI_CMD_SPI_READ 0x21
+ #define MUSLI_CMD_INIT 0x01
+ #define MUSLI_CMD_GPIO_SET_DIR 0x10
+ #define MUSLI_CMD_GPIO_DISABLE_PULLS 0x11
+ #define MUSLI_CMD_GPIO_PULL_UP 0x12
+ #define MUSLI_CMD_GPIO_PULL_DOWN 0x13
+ #define MUSLI_CMD_GPIO_GET 0x20
+ #define MUSLI_CMD_GPIO_PUT 0x21
+ #define MUSLI_CMD_SPI_READ 0x80
+ #define MUSLI_CMD_SPI_WRITE 0x81
+ #define MUSLI_CMD_RESET 0xf0
+ void musliInit(void);
+ void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3);
  void musliSetMode(uint8_t pin, uint8_t dir);
  void musliWrite(uint8_t pin, uint8_t bit);
  uint8_t musliRead(uint8_t pin);
@@ -83,6 +89,7 @@ void show_usage(char **argv) {
       " -d\tdump flash to file\n" \
       " -e\tbulk erase entire flash\n" \
       " -t\ttest fpga\n" \
+      " -c\tsend musli command (args: <cmd> [arg1] [arg2] [arg3])\n" \
       " -g\tread or write gpio (args: <gpio#> [0/1])\n" \
       " -r\treset fpga\n" \
       " -a\tusb bus and address are specified as first argument\n" \
@@ -98,7 +105,8 @@ void show_usage(char **argv) {
 #define MODE_READ 1
 #define MODE_WRITE 2
 #define MODE_ERASE 3
-#define MODE_GPIO 100
+#define MODE_CMD 100
+#define MODE_GPIO 200
 #define ACTION_RESET 1
 #define ACTION_ADDR 2
 
@@ -116,7 +124,7 @@ int main(int argc, char *argv[]) {
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdetag")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdetagc")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -125,6 +133,7 @@ int main(int argc, char *argv[]) {
          case 'e': mem_type = MEM_TYPE_FLASH; mode = MODE_ERASE; break;
          case 't': mem_type = MEM_TYPE_TEST; break;
          case 'g': mode = MODE_GPIO; break;
+         case 'c': mode = MODE_CMD; break;
          case 'a': actions |= ACTION_ADDR; break;
          case 'r': actions |= ACTION_RESET; break;
       }
@@ -132,6 +141,11 @@ int main(int argc, char *argv[]) {
 
 	int usb_bus = -1;
 	int usb_addr = -1;
+
+	int musli_cmd = 0;
+	int musli_arg1 = 0;
+	int musli_arg2 = 0;
+	int musli_arg3 = 0;
 
 	if ((actions & ACTION_ADDR) == ACTION_ADDR) {
 		
@@ -152,7 +166,17 @@ int main(int argc, char *argv[]) {
       return(1);
    }
 
-   if (mode == MODE_GPIO) {
+   if (mode == MODE_CMD) {
+
+		musli_cmd = (uint32_t)strtol(argv[optind], NULL, 16);
+		if (optind + 1 < argc) 
+			musli_arg1 = (uint32_t)strtol(argv[optind + 1], NULL, 16);
+		if (optind + 2 < argc) 
+			musli_arg2 = (uint32_t)strtol(argv[optind + 2], NULL, 16);
+		if (optind + 3 < argc) 
+			musli_arg3 = (uint32_t)strtol(argv[optind + 3], NULL, 16);
+
+   } else if (mode == MODE_GPIO) {
 
 		gpionum = (uint32_t)strtol(argv[optind], NULL, 10);
 		if (optind + 1 < argc) 
@@ -228,11 +252,19 @@ int main(int argc, char *argv[]) {
 
 #endif
 
-	if (mode == MODE_GPIO) {
+	if (mode == MODE_CMD) {
+
+		printf("send cmd [%.2x %.2x %.2x %.2x]\n", musli_cmd,
+			musli_arg1, musli_arg2, musli_arg3);
+
+		musliCmd(musli_cmd, musli_arg1, musli_arg2, musli_arg3);
+		exit(0);
+
+	} else if (mode == MODE_GPIO) {
 
 		if (gpioval != -1) {
 			GPIO_SET_MODE(gpionum, PI_OUTPUT);
-      	GPIO_WRITE(gpionum, 0);
+      	GPIO_WRITE(gpionum, gpioval);
 			printf("write gpio #%i val: 0x%.2X\n", gpionum, gpioval);
 		} else {
 			GPIO_SET_MODE(gpionum, PI_INPUT);
@@ -243,6 +275,8 @@ int main(int argc, char *argv[]) {
 		exit(0);
 
 	}
+
+	musliInit();
 
 	GPIO_SET_MODE(CSPI_SS, PI_OUTPUT);
 	GPIO_SET_MODE(CRESET, PI_OUTPUT);
@@ -721,42 +755,38 @@ void flash_write_enable(void) {
 
 #ifdef BACKEND_LIBUSB
 
-// bit banging interface
+void musliInit(void) {
+	musliCmd(MUSLI_CMD_INIT, 0, 0, 0);
+}
 
-void musliSetMode(uint8_t pin, uint8_t dir) {
+void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3) {
    int actual;
 	uint8_t buf[64];
 	bzero(buf, 64);
-	buf[0] = MUSLI_CMD_CONFIG_PORT_PIN;
-	buf[1] = pin;
-	buf[2] = dir;
+	buf[0] = cmd;
+	buf[1] = arg1;
+	buf[2] = arg2;
+	buf[3] = arg3;
    libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), buf, 64,
       &actual, 0);
 }
 
-void musliWrite(uint8_t pin, uint8_t bit) {
-   int actual;
-	uint8_t buf[64];
-	bzero(buf, 64);
-	buf[0] = MUSLI_CMD_GPIO_PUT_PIN;
-	buf[1] = pin;
-	buf[2] = bit;
-   libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), buf, 64,
-      &actual, 0);
+// bit banging interface
+
+void musliSetMode(uint8_t pin, uint8_t dir) {
+	musliCmd(MUSLI_CMD_GPIO_SET_DIR, pin, dir, 0);
+}
+
+void musliWrite(uint8_t pin, uint8_t val) {
+	musliCmd(MUSLI_CMD_GPIO_PUT, pin, val, 0);
 }
 
 uint8_t musliRead(uint8_t pin) {
    int actual;
 	uint8_t buf[64];
-	bzero(buf, 64);
-	buf[0] = MUSLI_CMD_GPIO_GET_PIN;
-	buf[1] = pin;
-   libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), buf, 64,
-      &actual, 0);
-
+	musliCmd(MUSLI_CMD_GPIO_GET, pin, 0, 0);
    libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), buf, 64,
       &actual, 0);
-
 	return buf[0];
 }
 

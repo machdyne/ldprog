@@ -133,7 +133,6 @@ int main(int argc, char *argv[]) {
 	int usb_bus = -1;
 	int usb_addr = -1;
 
-	printf("optind: %i\n", optind);
 	if ((actions & ACTION_ADDR) == ACTION_ADDR) {
 		
 		usb_bus = (uint32_t)strtol(argv[optind], NULL, 10);
@@ -142,8 +141,6 @@ int main(int argc, char *argv[]) {
 		optind += 2;
 
 	}
-
-	printf("optind: %i\n", optind);
 
    if ((mode == MODE_READ || mode == MODE_WRITE) && optind >= argc) {
       show_usage(argv);

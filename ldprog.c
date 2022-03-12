@@ -76,14 +76,14 @@ void flash_write_enable(void);
 void show_usage(char **argv);
 
 void show_usage(char **argv) {
-   printf("usage: %s [-hsfvdr] <image.bin> [hex_offset] [hex_size]\n" \
+   printf("usage: %s [-hsfgvdr] <image.bin> [hex_offset] [hex_size]\n" \
       " -h\tdisplay help\n" \
       " -s\twrite <image.bin> to FPGA SRAM (default)\n" \
       " -f\twrite <image.bin> to flash starting at [hex_offset]\n" \
-      " -v\tverify flash against <image.bin>\n" \
       " -d\tdump flash to file\n" \
       " -e\tbulk erase entire flash\n" \
       " -t\ttest fpga\n" \
+      " -g\tread or write gpio (args: <gpio#> [hex_val])\n" \
       " -r\treset fpga\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",
       argv[0]);
@@ -97,6 +97,7 @@ void show_usage(char **argv) {
 #define MODE_READ 1
 #define MODE_WRITE 2
 #define MODE_ERASE 3
+#define MODE_GPIO 100
 #define ACTION_RESET 1
 
 int spi_swap = 0;
@@ -111,7 +112,7 @@ int main(int argc, char *argv[]) {
 	uint32_t flash_offset = 0;
 	uint32_t flash_size = 0;
 
-   while ((opt = getopt(argc, argv, "hsfrdet")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdetg")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -119,6 +120,7 @@ int main(int argc, char *argv[]) {
          case 'd': mem_type = MEM_TYPE_FLASH; mode = MODE_READ; break;
          case 'e': mem_type = MEM_TYPE_FLASH; mode = MODE_ERASE; break;
          case 't': mem_type = MEM_TYPE_TEST; break;
+         case 'g': mode = MODE_GPIO; break;
          case 'r': actions |= ACTION_RESET; break;
       }
    }
@@ -128,12 +130,22 @@ int main(int argc, char *argv[]) {
       return(1);
    }
 
-   if (optind + 1 < argc) {
-   	flash_offset = (uint32_t)strtol(argv[optind + 1], NULL, 16);
+   if (mode == MODE_GPIO && optind >= argc) {
+      show_usage(argv);
+      return(1);
+   }
+
+   if (mode == MODE_GPIO) optind--;
+
+	if (optind + 1 < argc) {
+		if (MODE_GPIO)
+			flash_offset = (uint32_t)strtol(argv[optind + 1], NULL, 10);
+		else
+			flash_offset = (uint32_t)strtol(argv[optind + 1], NULL, 16);
 	}
 
-   if (optind + 2 < argc) {
-   	flash_size = (uint32_t)strtol(argv[optind + 2], NULL, 16);
+	if (optind + 2 < argc) {
+		flash_size = (uint32_t)strtol(argv[optind + 2], NULL, 16);
 	}
 
 #ifdef BACKEND_PIGPIO
@@ -154,6 +166,25 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 #endif
+
+	if (mode == MODE_GPIO) {
+
+		int gpionum = flash_offset;
+		int gpioval = flash_size;
+
+		if (argc == 4) {
+			GPIO_SET_MODE(gpionum, PI_OUTPUT);
+      	GPIO_WRITE(gpionum, 0);
+			printf("write gpio #%i val: 0x%.2X\n", gpionum, gpioval);
+		} else {
+			GPIO_SET_MODE(gpionum, PI_INPUT);
+			gpioval = GPIO_READ(gpionum);
+			printf("read gpio #%i val: 0x%.2X\n", gpionum, gpioval);
+		}
+
+		exit(0);
+
+	}
 
 	GPIO_SET_MODE(CSPI_SS, PI_OUTPUT);
 	GPIO_SET_MODE(CRESET, PI_OUTPUT);

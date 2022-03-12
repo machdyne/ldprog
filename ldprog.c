@@ -76,7 +76,7 @@ void flash_write_enable(void);
 void show_usage(char **argv);
 
 void show_usage(char **argv) {
-   printf("usage: %s [-hsfgvdr] <image.bin> [hex_offset] [hex_size]\n" \
+   printf("usage: %s [-hsfgvdr] [-a <bus> <addr>] <image.bin> [hex_offset] [hex_size]\n" \
       " -h\tdisplay help\n" \
       " -s\twrite <image.bin> to FPGA SRAM (default)\n" \
       " -f\twrite <image.bin> to flash starting at [hex_offset]\n" \
@@ -85,6 +85,7 @@ void show_usage(char **argv) {
       " -t\ttest fpga\n" \
       " -g\tread or write gpio (args: <gpio#> [hex_val])\n" \
       " -r\treset fpga\n" \
+      " -a\tusb bus and address are specified as first argument\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",
       argv[0]);
 }
@@ -99,6 +100,7 @@ void show_usage(char **argv) {
 #define MODE_ERASE 3
 #define MODE_GPIO 100
 #define ACTION_RESET 1
+#define ACTION_ADDR 2
 
 int spi_swap = 0;
 
@@ -111,8 +113,10 @@ int main(int argc, char *argv[]) {
 
 	uint32_t flash_offset = 0;
 	uint32_t flash_size = 0;
+	int gpionum;
+	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdetg")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdetag")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -121,9 +125,25 @@ int main(int argc, char *argv[]) {
          case 'e': mem_type = MEM_TYPE_FLASH; mode = MODE_ERASE; break;
          case 't': mem_type = MEM_TYPE_TEST; break;
          case 'g': mode = MODE_GPIO; break;
+         case 'a': actions |= ACTION_ADDR; break;
          case 'r': actions |= ACTION_RESET; break;
       }
    }
+
+	int usb_bus = -1;
+	int usb_addr = -1;
+
+	printf("optind: %i\n", optind);
+	if ((actions & ACTION_ADDR) == ACTION_ADDR) {
+		
+		usb_bus = (uint32_t)strtol(argv[optind], NULL, 10);
+		usb_addr = (uint32_t)strtol(argv[optind + 1], NULL, 10);
+
+		optind += 2;
+
+	}
+
+	printf("optind: %i\n", optind);
 
    if ((mode == MODE_READ || mode == MODE_WRITE) && optind >= argc) {
       show_usage(argv);
@@ -135,44 +155,85 @@ int main(int argc, char *argv[]) {
       return(1);
    }
 
-   if (mode == MODE_GPIO) optind--;
+   if (mode == MODE_GPIO) {
 
-	if (optind + 1 < argc) {
-		if (MODE_GPIO)
-			flash_offset = (uint32_t)strtol(argv[optind + 1], NULL, 10);
-		else
+		gpionum = (uint32_t)strtol(argv[optind], NULL, 10);
+		if (optind + 1 < argc) 
+			gpioval = (uint32_t)strtol(argv[optind + 1], NULL, 10);
+
+	} else {
+
+		if (optind + 1 < argc) {
 			flash_offset = (uint32_t)strtol(argv[optind + 1], NULL, 16);
-	}
+		}
 
-	if (optind + 2 < argc) {
-		flash_size = (uint32_t)strtol(argv[optind + 2], NULL, 16);
+		if (optind + 2 < argc) {
+			flash_size = (uint32_t)strtol(argv[optind + 2], NULL, 16);
+		}
+
 	}
 
 #ifdef BACKEND_PIGPIO
 	if (gpioInitialise() < 0) {
-		fprintf(stderr, "gpio init error");
+		fprintf(stderr, "gpio init error\n");
 		exit(1);
 	}
 #elif BACKEND_LIBUSB
 	if (libusb_init(NULL) < 0) {
-		fprintf(stderr, "usb init error");
+		fprintf(stderr, "usb init error\n");
 		exit(1);
 	}
 
-	usb_dh = libusb_open_device_with_vid_pid(NULL, USB_MFG_ID, USB_DEV_ID);
+	libusb_device **list = NULL;
+	ssize_t count = 0;
+
+	count = libusb_get_device_list(NULL, &list);
+
+	printf("devices found: \n");
+
+	for (size_t idx = 0; idx < count; ++idx) {
+
+		libusb_device *dev = list[idx];
+		struct libusb_device_descriptor desc = {0};
+
+		int rc = libusb_get_device_descriptor(dev, &desc);
+		if (rc != 0) continue;
+
+		int bus = libusb_get_bus_number(dev);
+		int addr = libusb_get_device_address(dev);
+
+		if (desc.idVendor == USB_MFG_ID && desc.idProduct == USB_DEV_ID) {
+
+			printf(" vendor %04x id %04x serial %i bus %i addr %i\n",
+				desc.idVendor, desc.idProduct, desc.iSerialNumber, bus, addr);
+
+			if ((usb_bus == -1 && usb_addr == -1) ||
+					(usb_bus == bus && usb_addr == addr)) {
+
+				if (usb_dh == NULL) {
+					printf("using bus %i addr %i\n", bus, addr);
+					libusb_open(dev, &usb_dh);
+				}
+
+			}
+		}
+
+	}
+
+	if (count == 0) printf("none.\n");
+
+	libusb_free_device_list(list, count);
 
 	if (!usb_dh) {
-		fprintf(stderr, "usb device error");
+		fprintf(stderr, "usb device error\n");
 		exit(1);
 	}
+
 #endif
 
 	if (mode == MODE_GPIO) {
 
-		int gpionum = flash_offset;
-		int gpioval = flash_size;
-
-		if (argc == 4) {
+		if (gpioval != -1) {
 			GPIO_SET_MODE(gpionum, PI_OUTPUT);
       	GPIO_WRITE(gpionum, 0);
 			printf("write gpio #%i val: 0x%.2X\n", gpionum, gpioval);
@@ -467,6 +528,10 @@ int main(int argc, char *argv[]) {
 	if (mode == MODE_WRITE)
 		free(buf);
 
+#ifdef BACKEND_LIBUSB
+	libusb_exit(NULL);
+#endif
+
 	return 0;
 
 }
@@ -549,7 +614,7 @@ void spi_write(void *buf, uint32_t len) {
 			memcpy(lbuf + 4, buf + offset, MUSLI_BLK_SIZE);
   		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 			&actual, 0);
-	  	printf("spi_write: %i/%d [%i/%i]\n", actual, 64, offset, len);
+//	  	printf("spi_write: %i/%d [%i/%i]\n", actual, 64, offset, len);
 
 		rlen -= 60;
 		offset += 60;
@@ -562,9 +627,8 @@ void spi_write(void *buf, uint32_t len) {
 		lbuf[1] = rlen;
 		if (buf != NULL)
 			memcpy(lbuf + 4, buf + offset, rlen);
-  		int r = libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
+  		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 			&actual, 0);
-	  	printf("spi_write: %i\n", r);
 	}
 
 #else

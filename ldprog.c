@@ -83,7 +83,7 @@ void show_usage(char **argv) {
       " -d\tdump flash to file\n" \
       " -e\tbulk erase entire flash\n" \
       " -t\ttest fpga\n" \
-      " -g\tread or write gpio (args: <gpio#> [hex_val])\n" \
+      " -g\tread or write gpio (args: <gpio#> [0/1])\n" \
       " -r\treset fpga\n" \
       " -a\tusb bus and address are specified as first argument\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",

@@ -49,8 +49,9 @@
  #define MUSLI_CMD_GPIO_PUT 0x21
  #define MUSLI_CMD_SPI_READ 0x80
  #define MUSLI_CMD_SPI_WRITE 0x81
+ #define MUSLI_CMD_CFG_PIO_SPI 0x8f
  #define MUSLI_CMD_RESET 0xf0
- void musliInit(void);
+ void musliInit(uint8_t mode);
  void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3);
  void musliSetMode(uint8_t pin, uint8_t dir);
  void musliWrite(uint8_t pin, uint8_t bit);
@@ -89,7 +90,7 @@ void show_usage(char **argv) {
       " -d\tdump flash to file\n" \
       " -e\tbulk erase entire flash\n" \
       " -t\ttest fpga\n" \
-      " -c\tsend musli command (args: <cmd> [arg1] [arg2] [arg3])\n" \
+      " -c\tsend musli command (args: <hex_cmd> [hex_arg1] [hex_arg2] [hex_arg3])\n" \
       " -g\tread or write gpio (args: <gpio#> [0/1])\n" \
       " -r\treset fpga\n" \
       " -a\tusb bus and address are specified as first argument\n" \
@@ -110,6 +111,7 @@ void show_usage(char **argv) {
 #define ACTION_RESET 1
 #define ACTION_ADDR 2
 
+int debug = 0;
 int spi_swap = 0;
 
 int main(int argc, char *argv[]) {
@@ -124,7 +126,7 @@ int main(int argc, char *argv[]) {
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdetagc")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdetagcD")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -136,6 +138,7 @@ int main(int argc, char *argv[]) {
          case 'c': mode = MODE_CMD; break;
          case 'a': actions |= ACTION_ADDR; break;
          case 'r': actions |= ACTION_RESET; break;
+         case 'D': debug = 1; break;
       }
    }
 
@@ -250,12 +253,11 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
-#endif
-
 	if (mode == MODE_CMD) {
 
-		printf("send cmd [%.2x %.2x %.2x %.2x]\n", musli_cmd,
-			musli_arg1, musli_arg2, musli_arg3);
+		if (debug)
+			printf("send cmd [%.2x %.2x %.2x %.2x]\n", musli_cmd,
+				musli_arg1, musli_arg2, musli_arg3);
 
 		musliCmd(musli_cmd, musli_arg1, musli_arg2, musli_arg3);
 		exit(0);
@@ -276,7 +278,14 @@ int main(int argc, char *argv[]) {
 
 	}
 
-	musliInit();
+	if (mem_type == MEM_TYPE_FLASH) {
+		musliInit(2);
+		musliCmd(MUSLI_CMD_CFG_PIO_SPI, CSPI_SCK, CSPI_SO, CSPI_SI);
+	} else {
+		musliInit(0);
+	}
+
+#endif
 
 	GPIO_SET_MODE(CSPI_SS, PI_OUTPUT);
 	GPIO_SET_MODE(CRESET, PI_OUTPUT);
@@ -354,8 +363,10 @@ int main(int argc, char *argv[]) {
 
 		spi_swap = 0;
 
+#ifdef BACKEND_PIGPIO
 		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
 		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+#endif
 
 		char fbuf[256];
 		int i = 0;
@@ -365,7 +376,10 @@ int main(int argc, char *argv[]) {
 		GPIO_WRITE(CRESET, 0);
 		DELAY();
 
+#ifdef BACKEND_PIGPIO
 		GPIO_WRITE(CSPI_SCK, 0);
+#endif
+
 		GPIO_WRITE(CSPI_SS, 1);
 		DELAY();
 
@@ -447,8 +461,10 @@ int main(int argc, char *argv[]) {
 
 		spi_swap = 0;
 
+#ifdef BACKEND_PIGPIO
 		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
 		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+#endif
 
 		printf("reading flash to %s ...\n", argv[optind]);
 
@@ -458,10 +474,13 @@ int main(int argc, char *argv[]) {
 		// hold fpga in reset mode
 		GPIO_WRITE(CRESET, 0);
 		GPIO_WRITE(CSPI_SS, 1);
+
+#ifdef BACKEND_PIGPIO
 		GPIO_WRITE(CSPI_SCK, 1);
+#endif
 
 		// exit power down mode
-		printf("exiting powder down mode\n");
+		printf("exiting power down mode\n");
 		GPIO_WRITE(CSPI_SS, 0);
 		DELAY();
 		spi_cmd(0xab);
@@ -483,7 +502,7 @@ int main(int argc, char *argv[]) {
 
 		for (int i = 0; i < flash_size / 256; i++) {
 
-			printf("reading from %.6x\n", flash_offset + (i * 256));
+			printf("reading from 0x%.6x\n", flash_offset + (i * 256));
 
 			// read data from flash
 			GPIO_WRITE(CSPI_SS, 0);
@@ -509,7 +528,9 @@ int main(int argc, char *argv[]) {
 		GPIO_WRITE(CRESET, 0);
 		DELAY();
 
+#ifdef BACKEND_PIGPIO
 		GPIO_WRITE(CSPI_SCK, 0);
+#endif
 		GPIO_WRITE(CSPI_SS, 1);
 		DELAY();
 
@@ -597,8 +618,17 @@ void fpga_reset(void) {
 
 void spi_cmd(uint8_t cmd) {
 
+#ifdef BACKEND_LIBUSB
+  	int actual;
+	uint8_t lbuf[64];
+	bzero(lbuf, 64);
+	lbuf[0] = MUSLI_CMD_SPI_WRITE;
+	lbuf[1] = 1;
+	lbuf[4] = cmd;
+  	libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
+		&actual, 0);
+#else
 	uint8_t data_bit;
-
 	for (int i = 7; i >= 0; i--) {
 		GPIO_WRITE(CSPI_SCK, 0);
 		data_bit = (cmd >> i) & 0x01;
@@ -608,13 +638,29 @@ void spi_cmd(uint8_t cmd) {
 			GPIO_WRITE(CSPI_SO, data_bit);
 		GPIO_WRITE(CSPI_SCK, 1);
 	}
+#endif
 
 }
 
 void spi_addr(uint32_t addr) {
 
+#ifdef BACKEND_LIBUSB
+  	int actual;
+	uint8_t lbuf[64];
+	bzero(lbuf, 64);
+	lbuf[0] = MUSLI_CMD_SPI_WRITE;
+	lbuf[1] = 3;
+	lbuf[4] = (addr & 0x00ff0000) >> 16;
+	lbuf[5] = (addr & 0x0000ff00) >> 8;
+	lbuf[6] = (addr & 0x000000ff);
+	if (debug)
+		printf(" spi_addr [%.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x]\n",
+			lbuf[0], lbuf[1], lbuf[2], lbuf[3],
+			lbuf[4], lbuf[5], lbuf[6], lbuf[7]);
+  	libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
+		&actual, 0);
+#else
 	uint8_t data_bit;
-
 	for (int i = 23; i >= 0; i--) {
 		GPIO_WRITE(CSPI_SCK, 0);
 		data_bit = (addr >> i) & 0x01;
@@ -624,6 +670,8 @@ void spi_addr(uint32_t addr) {
 			GPIO_WRITE(CSPI_SO, data_bit);
 		GPIO_WRITE(CSPI_SCK, 1);
 	}
+#endif
+
 }
 
 #define MUSLI_BLK_SIZE 60
@@ -705,9 +753,16 @@ void spi_read(void *buf, uint32_t len) {
 
 uint8_t spi_read_byte(void) {
 
+#ifdef BACKEND_LIBUSB
+   int actual;
+	uint8_t buf[64];
+	musliCmd(MUSLI_CMD_SPI_READ, 1, 0, 0);
+   libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), buf, 64,
+      &actual, 0);
+	return buf[0];
+#else
 	uint8_t data_bit;
 	uint8_t data_byte = 0x00;
-
 	for (int i = 7; i >= 0; i--) {
 		GPIO_WRITE(CSPI_SCK, 0);
 		GPIO_WRITE(CSPI_SCK, 1);
@@ -719,6 +774,7 @@ uint8_t spi_read_byte(void) {
 	}
 
 	return data_byte;
+#endif
 
 }
 
@@ -755,8 +811,8 @@ void flash_write_enable(void) {
 
 #ifdef BACKEND_LIBUSB
 
-void musliInit(void) {
-	musliCmd(MUSLI_CMD_INIT, 0, 0, 0);
+void musliInit(uint8_t mode) {
+	musliCmd(MUSLI_CMD_INIT, mode, 0, 0);
 }
 
 void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3) {
@@ -767,6 +823,8 @@ void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3) {
 	buf[1] = arg1;
 	buf[2] = arg2;
 	buf[3] = arg3;
+	if (debug)
+		printf("send cmd [%.2x %.2x %.2x %.2x]\n", cmd, arg1, arg2, arg3);
    libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), buf, 64,
       &actual, 0);
 }

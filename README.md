@@ -61,14 +61,14 @@ Display help:
 
   <img src="https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png" width="50%">
 
-### Müsli Default Wiring
+### Müsli / Raspberry Pi Pico Default Wiring
 
-| Signal | GPIO# | Müsli Pin | Target Pin |
-| ------ | ----- | --------- | ---------- |
-| CSPI\_SS | 9 | 8 | 1 |
-| CSPI\_SO | 8 | 7 | 4 |
-| CSPI\_SI | 11 | 10 | 3 |
-| CSPI\_SCK | 10 | 9 | 2 |
-| CRESET | 3 | 4 | 5 |
-| CDONE | 2 | 3 | 6 |
+| Signal | GPIO# | Müsli Pin | Pico Pin | Target Pin |
+| ------ | ----- | --------- | ---------| ---------- |
+| CSPI\_SS | 9 | 8 | 12 | 1 |
+| CSPI\_SO | 8 | 7 | 11 | 4 |
+| CSPI\_SI | 11 | 10 | 15 | 3 |
+| CSPI\_SCK | 10 | 9 | 14 | 2 |
+| CRESET | 3 | 4 | 5 | 5 |
+| CDONE | 2 | 3 | 4 | 6 |
 

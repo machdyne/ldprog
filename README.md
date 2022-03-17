@@ -38,13 +38,14 @@ Display help:
   * [Riegel Computer](https://machdyne.com/product/riegel-computer/)
   * [Kröte FPGA Board](https://machdyne.com/product/krote-fpga-board/)
   * [Brot FPGA Board](https://machdyne.com/product/brot-fpga-board/)
-  * [Krume FPGA SOM](https://machdyne.com/product/krume-fpga-som/)
 
 ## Supported Interface Devices
 
   * Raspberry Pi (GPIO)
   * Raspberry Pi Pico (USB)
   * [Müsli](https://machdyne.com/product/musli-usb-pmod/) (USB)
+
+Note: Raspberry Pi Pico must be loaded with the [Müsli firmware](https://github.com/machdyne/musli).
 
 ### Raspberry Pi GPIO Default Wiring
 

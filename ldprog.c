@@ -409,12 +409,15 @@ int main(int argc, char *argv[]) {
 		printf(" flash status: 0x%.2x\n", flash_status());
 
 		int blk_size = 4096;
-		int blks = len / blk_size;
+		int blks = (len / blk_size);
+
+		if (!blks) blks = 1;
 
 		// bulk erase
-		printf("erasing flash from %.6x to %.6x ...\n", 0, len);
+		printf("erasing flash from %.6x to %.6x ...\n",
+			flash_offset, flash_offset + blks*blk_size);
 
-		for (int blk = 0; blk <= blks; blk++) {
+		for (int blk = 0; blk < blks; blk++) {
 
 			printf(" erasing 4K flash at %.6x ...\n",
 				flash_offset + (blk * blk_size));
@@ -650,9 +653,9 @@ void spi_addr(uint32_t addr) {
 	bzero(lbuf, 64);
 	lbuf[0] = MUSLI_CMD_SPI_WRITE;
 	lbuf[1] = 3;
-	lbuf[4] = (addr & 0x00ff0000) >> 16;
-	lbuf[5] = (addr & 0x0000ff00) >> 8;
-	lbuf[6] = (addr & 0x000000ff);
+	lbuf[4] = addr >> 16;
+	lbuf[5] = addr >> 8;
+	lbuf[6] = addr;
 	if (debug)
 		printf(" spi_addr [%.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x]\n",
 			lbuf[0], lbuf[1], lbuf[2], lbuf[3],
@@ -693,7 +696,9 @@ void spi_write(void *buf, uint32_t len) {
 			memcpy(lbuf + 4, buf + offset, MUSLI_BLK_SIZE);
   		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 			&actual, 0);
-//	  	printf("spi_write: %i/%d [%i/%i]\n", actual, 64, offset, len);
+
+		if (debug)
+	  		printf("spi_write: %i/%d [%i/%i]\n", actual, 64, offset, len);
 
 		rlen -= 60;
 		offset += 60;
@@ -740,14 +745,49 @@ void spi_write(void *buf, uint32_t len) {
 
 void spi_read(void *buf, uint32_t len) {
 
-	uint8_t data_byte;
+#ifdef BACKEND_LIBUSB
+  	int actual;
+	uint8_t lbuf[64];
 
+	uint32_t rlen = len;
+	uint32_t offset = 0;
+
+	for (int blk = 0; blk < len / 64; blk++) {
+
+		bzero(lbuf, 64);
+		musliCmd(MUSLI_CMD_SPI_READ, 64, 0, 0);
+  		libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), lbuf, 64,
+			&actual, 0);
+
+		if (buf != NULL)
+			memcpy(buf + offset, lbuf, 64);
+
+		if (debug)
+	  		printf("spi_read: %i/%d [%i/%i]\n", actual, 64, offset, len);
+
+		rlen -= 60;
+		offset += 60;
+
+	}
+
+	if (rlen) {
+		bzero(lbuf, 64);
+		musliCmd(MUSLI_CMD_SPI_READ, 64, 0, 0);
+  		libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), lbuf, 64,
+			&actual, 0);
+
+		if (buf != NULL)
+			memcpy(buf + offset, lbuf, rlen);
+	}
+#else
+	uint8_t data_byte;
 	for (int p = 0; p < len; p++) {
 
 		data_byte = spi_read_byte();
 		*(unsigned char *)(buf + p) = data_byte;
 
 	}
+#endif
 
 }
 

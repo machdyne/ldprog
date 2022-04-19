@@ -39,6 +39,7 @@
  #define CSPI_SCK	10
  #define CDONE		2
  #define CRESET	3
+ #define MUSLI_BLK_SIZE 60
  #define MUSLI_CMD_READY 0x00
  #define MUSLI_CMD_INIT 0x01
  #define MUSLI_CMD_GPIO_SET_DIR 0x10
@@ -104,8 +105,9 @@ void show_usage(char **argv) {
 #define MEM_TYPE_FLASH 3
 #define MODE_NONE 0
 #define MODE_READ 1
-#define MODE_WRITE 2
-#define MODE_ERASE 3
+#define MODE_VERIFY 2
+#define MODE_WRITE 3
+#define MODE_ERASE 4
 #define MODE_CMD 100
 #define MODE_GPIO 200
 #define ACTION_RESET 1
@@ -126,12 +128,13 @@ int main(int argc, char *argv[]) {
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdetagcD")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdvetagcD")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
          case 'f': mem_type = MEM_TYPE_FLASH; mode = MODE_WRITE; break;
          case 'd': mem_type = MEM_TYPE_FLASH; mode = MODE_READ; break;
+         case 'v': mem_type = MEM_TYPE_FLASH; mode = MODE_VERIFY; break;
          case 'e': mem_type = MEM_TYPE_FLASH; mode = MODE_ERASE; break;
          case 't': mem_type = MEM_TYPE_TEST; break;
          case 'g': mode = MODE_GPIO; break;
@@ -305,7 +308,7 @@ int main(int argc, char *argv[]) {
 
 	FILE *fp;
 
-	if (mode == MODE_WRITE) {
+	if (mode == MODE_WRITE || mode == MODE_VERIFY) {
 
 		fp = fopen(argv[optind], "r");
 
@@ -369,6 +372,7 @@ int main(int argc, char *argv[]) {
 #endif
 
 		char fbuf[256];
+		char vbuf[256];
 		int i = 0;
 		int flen = len;
 
@@ -434,13 +438,15 @@ int main(int argc, char *argv[]) {
 
 		}
 
+		printf("writing %i bytes @ %.6X ...\n", len, flash_offset);
+
 		while (i < len) {
 
 			if (len - i >= 256) flen = 256; else flen = len - i;
 
 			memcpy(fbuf, buf + i, flen);
 
-			printf("writing %i bytes @ %.6X ...\n", flen, flash_offset + i);
+			printf(" writing %i bytes @ %.6X ... ", flen, flash_offset + i);
 
 			flash_write_enable();
 
@@ -450,6 +456,19 @@ int main(int argc, char *argv[]) {
 			spi_addr(flash_offset + i);
 			spi_write(fbuf, flen);
 			GPIO_WRITE(CSPI_SS, 1);
+
+			// read back
+			GPIO_WRITE(CSPI_SS, 0);
+			spi_cmd(0x03);
+			spi_addr(flash_offset + i);
+			spi_read(vbuf, 256);
+			GPIO_WRITE(CSPI_SS, 1);
+
+			if (!memcmp(fbuf, vbuf, flen)) {
+				printf("ok\n");
+			} else {
+				printf("failed\n");
+			}
 
 			i += flen;
 
@@ -501,7 +520,7 @@ int main(int argc, char *argv[]) {
 		GPIO_WRITE(CSPI_SS, 1);
 		printf("\n");
 
-		printf("reading 0x%x bytes @ addr 0x%x\n", flash_size, flash_offset);
+		printf("reading %i bytes @ addr 0x%x\n", flash_size, flash_offset);
 
 		for (int i = 0; i < flash_size / 256; i++) {
 
@@ -519,6 +538,80 @@ int main(int argc, char *argv[]) {
 		}
 
 		fclose(fp);
+
+	} else if (mem_type == MEM_TYPE_FLASH && mode == MODE_VERIFY) {
+
+		spi_swap = 0;
+		char fbuf[256];
+		int i = 0;
+		int flen;
+		int mismatches = 0;
+
+#ifdef BACKEND_PIGPIO
+		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
+		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+#endif
+
+		printf("verifying flash ...\n");
+
+		// hold fpga in reset mode
+		GPIO_WRITE(CRESET, 0);
+		GPIO_WRITE(CSPI_SS, 1);
+
+#ifdef BACKEND_PIGPIO
+		GPIO_WRITE(CSPI_SCK, 1);
+#endif
+
+		// exit power down mode
+		printf("exiting power down mode\n");
+		GPIO_WRITE(CSPI_SS, 0);
+		DELAY();
+		spi_cmd(0xab);
+		DELAY();
+		GPIO_WRITE(CSPI_SS, 1);
+		usleep(5000);
+		printf(" flash status: 0x%.2x\n", flash_status());
+
+		// read JEDEC ID
+		printf("flash id: ");
+		GPIO_WRITE(CSPI_SS, 0);
+		spi_cmd(0x9f);
+		for (int i = 0; i < 5; i++)
+			printf("%.2x ", spi_read_byte());
+		GPIO_WRITE(CSPI_SS, 1);
+		printf("\n");
+
+		printf("verifying %i bytes @ addr 0x%x\n", len, flash_offset);
+
+		while (i < len) {
+
+			if (len - i >= 256) flen = 256; else flen = len - i;
+
+			printf(" reading %i bytes from 0x%.6x\n", flen, flash_offset + i);
+
+			// read data from flash
+			GPIO_WRITE(CSPI_SS, 0);
+			spi_cmd(0x03);
+			spi_addr(flash_offset + i);
+			spi_read(fbuf, flen);
+			GPIO_WRITE(CSPI_SS, 1);
+
+
+			if (memcmp(fbuf, buf + i, flen)) {
+				printf(" *** mismatch @ 0x%.6x\n", i);
+				printf("   FILE: ");
+				for (int x = 0; x < 256; x++) printf("%02x ", (unsigned char)buf[x+i]);
+				printf("\n  FLASH: ");
+				for (int x = 0; x < 256; x++) printf("%02x ", (unsigned char)fbuf[x]);
+				printf("\n\n");
+				mismatches++;
+			}
+
+			i += flen;
+
+		}
+
+		printf("block mismatches: %i\n", mismatches);
 
 	} else if (mem_type == MEM_TYPE_FLASH && mode == MODE_ERASE) {
 
@@ -677,7 +770,6 @@ void spi_addr(uint32_t addr) {
 
 }
 
-#define MUSLI_BLK_SIZE 60
 void spi_write(void *buf, uint32_t len) {
 
 #ifdef BACKEND_LIBUSB
@@ -697,15 +789,15 @@ void spi_write(void *buf, uint32_t len) {
   		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 			&actual, 0);
 
-		if (debug)
-	  		printf("spi_write: %i/%d [%i/%i]\n", actual, 64, offset, len);
+		if (debug) printf("spi_write: [%i/%i]\n", offset, len);
 
-		rlen -= 60;
-		offset += 60;
+		rlen -= MUSLI_BLK_SIZE;
+		offset += MUSLI_BLK_SIZE;
 
 	}
 
 	if (rlen) {
+		if (debug) printf("spi_write: [%i/%i]\n", offset, len);
 		bzero(lbuf, 64);
 		lbuf[0] = MUSLI_CMD_SPI_WRITE;
 		lbuf[1] = rlen;
@@ -765,8 +857,8 @@ void spi_read(void *buf, uint32_t len) {
 		if (debug)
 	  		printf("spi_read: %i/%d [%i/%i]\n", actual, 64, offset, len);
 
-		rlen -= 60;
-		offset += 60;
+		rlen -= 64;
+		offset += 64;
 
 	}
 

@@ -421,7 +421,7 @@ int main(int argc, char *argv[]) {
 		printf("erasing flash from %.6x to %.6x ...\n",
 			flash_offset, flash_offset + blks*blk_size);
 
-		for (int blk = 0; blk < blks; blk++) {
+		for (int blk = 0; blk <= blks; blk++) {
 
 			printf(" erasing 4K flash at %.6x ...\n",
 				flash_offset + (blk * blk_size));
@@ -446,7 +446,7 @@ int main(int argc, char *argv[]) {
 
 			memcpy(fbuf, buf + i, flen);
 
-			printf(" writing %i bytes @ %.6X ... ", flen, flash_offset + i);
+			printf(" writing %i bytes @ %.6x ... ", flen, flash_offset + i);
 
 			flash_write_enable();
 
@@ -461,7 +461,7 @@ int main(int argc, char *argv[]) {
 			GPIO_WRITE(CSPI_SS, 0);
 			spi_cmd(0x03);
 			spi_addr(flash_offset + i);
-			spi_read(vbuf, 256);
+			spi_read(vbuf, flen);
 			GPIO_WRITE(CSPI_SS, 1);
 
 			if (!memcmp(fbuf, vbuf, flen)) {

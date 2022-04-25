@@ -70,6 +70,7 @@
 #define DELAY()
 
 void fpga_reset(void);
+void spi_release(void);
 void spi_cmd(uint8_t cmd);
 void spi_addr(uint32_t addr);
 void spi_write(void *buf, uint32_t len);
@@ -356,12 +357,6 @@ int main(int argc, char *argv[]) {
 		usleep(100000);
 		printf("cdone: %i\n", GPIO_READ(CDONE));
 
-		// release the SPI pins
-		GPIO_SET_MODE(CSPI_SCK, PI_INPUT);
-		GPIO_SET_MODE(CSPI_SO, PI_INPUT);
-		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
-		GPIO_SET_MODE(CSPI_SS, PI_INPUT);
-
 	} else if (mem_type == MEM_TYPE_FLASH && mode == MODE_WRITE) {
 
 		spi_swap = 0;
@@ -421,7 +416,7 @@ int main(int argc, char *argv[]) {
 		printf("erasing flash from %.6x to %.6x ...\n",
 			flash_offset, flash_offset + blks*blk_size);
 
-		for (int blk = 0; blk <= blks; blk++) {
+		for (int blk = 0; blk <= blks + 1; blk++) {
 
 			printf(" erasing 4K flash at %.6x ...\n",
 				flash_offset + (blk * blk_size));
@@ -676,6 +671,8 @@ int main(int argc, char *argv[]) {
 	if (mode == MODE_WRITE)
 		free(buf);
 
+	spi_release();
+
 #ifdef BACKEND_LIBUSB
 	libusb_exit(NULL);
 #endif
@@ -689,10 +686,7 @@ void fpga_reset(void) {
 	printf("resetting FPGA\n");
 
 	// release the SPI pins
-	GPIO_SET_MODE(CSPI_SCK, PI_INPUT);
-	GPIO_SET_MODE(CSPI_SO, PI_INPUT);
-	GPIO_SET_MODE(CSPI_SI, PI_INPUT);
-	GPIO_SET_MODE(CSPI_SS, PI_INPUT);
+	spi_release();
 	GPIO_SET_MODE(CRESET, PI_OUTPUT);
 	GPIO_SET_MODE(CDONE, PI_INPUT);
 
@@ -711,6 +705,13 @@ void fpga_reset(void) {
 	printf("cdone: %i\n", GPIO_READ(CDONE));
 
 };
+
+void spi_release(void) {
+	GPIO_SET_MODE(CSPI_SCK, PI_INPUT);
+	GPIO_SET_MODE(CSPI_SO, PI_INPUT);
+	GPIO_SET_MODE(CSPI_SI, PI_INPUT);
+	GPIO_SET_MODE(CSPI_SS, PI_INPUT);
+}
 
 void spi_cmd(uint8_t cmd) {
 

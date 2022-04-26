@@ -283,6 +283,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (mem_type == MEM_TYPE_FLASH) {
+		musliInit(0);
 		musliInit(2);
 		musliCmd(MUSLI_CMD_CFG_PIO_SPI, CSPI_SCK, CSPI_SO, CSPI_SI);
 	} else {

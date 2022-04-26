@@ -691,16 +691,14 @@ void fpga_reset(void) {
 	GPIO_SET_MODE(CRESET, PI_OUTPUT);
 	GPIO_SET_MODE(CDONE, PI_INPUT);
 
+	printf("cdone: %i\n", GPIO_READ(CDONE));
+
 	// put fpga into master SPI mode and attempt self-configuration
 	GPIO_WRITE(CRESET, 0);
-	usleep(1000000);
+	usleep(100000);
 	GPIO_WRITE(CRESET, 1);
-	usleep(1000000);
+	usleep(100000);
 
-	printf("cdone: %i\n", GPIO_READ(CDONE));
-	usleep(1000000);
-	printf("cdone: %i\n", GPIO_READ(CDONE));
-	usleep(1000000);
 	printf("cdone: %i\n", GPIO_READ(CDONE));
 	usleep(1000000);
 	printf("cdone: %i\n", GPIO_READ(CDONE));

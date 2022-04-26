@@ -707,6 +707,7 @@ void fpga_reset(void) {
 };
 
 void spi_release(void) {
+	musliInit(1);
 	GPIO_SET_MODE(CSPI_SCK, PI_INPUT);
 	GPIO_SET_MODE(CSPI_SO, PI_INPUT);
 	GPIO_SET_MODE(CSPI_SI, PI_INPUT);

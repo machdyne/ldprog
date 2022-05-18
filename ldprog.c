@@ -700,7 +700,7 @@ void fpga_reset(void) {
 	usleep(100000);
 
 	printf("cdone: %i\n", GPIO_READ(CDONE));
-	usleep(1000000);
+	usleep(100000);
 	printf("cdone: %i\n", GPIO_READ(CDONE));
 
 };

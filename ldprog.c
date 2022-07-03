@@ -85,7 +85,7 @@ void flash_write_enable(void);
 void show_usage(char **argv);
 
 void show_usage(char **argv) {
-   printf("usage: %s [-hsfgvdr] [-a <bus> <addr>] <image.bin> [hex_offset] [hex_size]\n" \
+   printf("usage: %s [-hsfgvmdr] [-a <bus> <addr>] <image.bin> [hex_offset] [hex_size]\n" \
       " -h\tdisplay help\n" \
       " -s\twrite <image.bin> to FPGA SRAM (default)\n" \
       " -f\twrite <image.bin> to flash starting at [hex_offset]\n" \
@@ -95,6 +95,7 @@ void show_usage(char **argv) {
       " -c\tsend musli command (args: <hex_cmd> [hex_arg1] [hex_arg2] [hex_arg3])\n" \
       " -g\tread or write gpio (args: <gpio#> [0/1])\n" \
       " -r\treset fpga\n" \
+      " -m\tmanual reset mode\n" \
       " -a\tusb bus and address are specified as first argument\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",
       argv[0]);
@@ -112,7 +113,8 @@ void show_usage(char **argv) {
 #define MODE_CMD 100
 #define MODE_GPIO 200
 #define ACTION_RESET 1
-#define ACTION_ADDR 2
+#define ACTION_MANUAL_RESET 2
+#define ACTION_ADDR 3
 
 int debug = 0;
 int spi_swap = 0;
@@ -129,7 +131,7 @@ int main(int argc, char *argv[]) {
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdvetagcD")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdvmetagcD")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -142,6 +144,7 @@ int main(int argc, char *argv[]) {
          case 'c': mode = MODE_CMD; break;
          case 'a': actions |= ACTION_ADDR; break;
          case 'r': actions |= ACTION_RESET; break;
+         case 'm': actions |= ACTION_MANUAL_RESET; break;
          case 'D': debug = 1; break;
       }
    }
@@ -334,11 +337,20 @@ int main(int argc, char *argv[]) {
 		GPIO_SET_MODE(CSPI_SI, PI_OUTPUT);
 		GPIO_SET_MODE(CSPI_SO, PI_INPUT);
 
+		if ((actions & ACTION_MANUAL_RESET) == ACTION_MANUAL_RESET)
+			printf("press reset button now\n");
+
 		// reset fpga into SPI slave configuration mode
 		GPIO_WRITE(CSPI_SS, 0);
 		GPIO_WRITE(CRESET, 0);
 		usleep(RST_DELAY);
 		printf("cdone: %i\n", GPIO_READ(CDONE));
+
+		if ((actions & ACTION_MANUAL_RESET) == ACTION_MANUAL_RESET) {
+			usleep(2000000);
+			printf("release reset button now\n");
+			usleep(2000000);
+		}
 
 		GPIO_WRITE(CRESET, 1);
 		usleep(RST_DELAY);

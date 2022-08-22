@@ -97,6 +97,8 @@ void show_usage(char **argv) {
       " -r\treset fpga\n" \
       " -m\tmanual reset mode\n" \
       " -a\tusb bus and address are specified as first argument\n" \
+      " -b\tbonbon mode\n" \
+      " -w\twerkzeug mode (only for flashing MMODs via Werkzeugs PMOD)\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",
       argv[0]);
 }
@@ -112,26 +114,35 @@ void show_usage(char **argv) {
 #define MODE_ERASE 4
 #define MODE_CMD 100
 #define MODE_GPIO 200
-#define ACTION_RESET 1
-#define ACTION_MANUAL_RESET 2
-#define ACTION_ADDR 3
+#define OPTION_RESET 1
+#define OPTION_MANUAL_RESET 2
+#define OPTION_ADDR 4
+#define OPTION_BONBON 8
+#define OPTION_WERKZEUG 16
 
 int debug = 0;
 int spi_swap = 0;
+
+uint8_t cspi_ss = CSPI_SS;
+uint8_t cspi_si = CSPI_SI;
+uint8_t cspi_so = CSPI_SO;
+uint8_t cspi_sck = CSPI_SCK;
+uint8_t cdone = CDONE;
+uint8_t creset = CRESET;
 
 int main(int argc, char *argv[]) {
 
    int opt;
    int mem_type;
 	int mode = MODE_NONE;
-	int actions = 0;
+	int options = 0;
 
 	uint32_t flash_offset = 0;
 	uint32_t flash_size = 0;
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdvmetagcD")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdvmetagbcDw")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -142,9 +153,11 @@ int main(int argc, char *argv[]) {
          case 't': mem_type = MEM_TYPE_TEST; break;
          case 'g': mode = MODE_GPIO; break;
          case 'c': mode = MODE_CMD; break;
-         case 'a': actions |= ACTION_ADDR; break;
-         case 'r': actions |= ACTION_RESET; break;
-         case 'm': actions |= ACTION_MANUAL_RESET; break;
+         case 'a': options |= OPTION_ADDR; break;
+         case 'r': options |= OPTION_RESET; break;
+         case 'm': options |= OPTION_MANUAL_RESET; break;
+         case 'b': options |= OPTION_BONBON; break;
+         case 'w': options |= OPTION_WERKZEUG; break;
          case 'D': debug = 1; break;
       }
    }
@@ -157,13 +170,29 @@ int main(int argc, char *argv[]) {
 	int musli_arg2 = 0;
 	int musli_arg3 = 0;
 
-	if ((actions & ACTION_ADDR) == ACTION_ADDR) {
+	if ((options & OPTION_ADDR) == OPTION_ADDR) {
 		
 		usb_bus = (uint32_t)strtol(argv[optind], NULL, 10);
 		usb_addr = (uint32_t)strtol(argv[optind + 1], NULL, 10);
 
 		optind += 2;
 
+	}
+
+	if ((options & OPTION_BONBON) == OPTION_BONBON) {
+		cspi_ss = 29;
+		cspi_so = 28;
+		cspi_si = 27;
+		cspi_sck = 26;
+		cdone = 18;
+		creset = 19;
+	}
+
+	if (((options & OPTION_WERKZEUG) == OPTION_WERKZEUG) && mem_type == MEM_TYPE_FLASH) {
+		cspi_ss = 19;	// PMOD_A1 / MMOD PIN 1 (SS)
+		cspi_so = 17;	// PMOD_A2 / MMOD PIN 2 (MISO)
+		cspi_si = 15;	// PMOD_A3 / MMOD PIN 3 (MOSI)
+		cspi_sck = 13;	// PMOD_A4 /  MMOD PIN 4 (SCK)
 	}
 
    if ((mode == MODE_READ || mode == MODE_WRITE) && optind >= argc) {
@@ -288,22 +317,23 @@ int main(int argc, char *argv[]) {
 	if (mem_type == MEM_TYPE_FLASH) {
 		musliInit(0);
 		musliInit(2);
-		musliCmd(MUSLI_CMD_CFG_PIO_SPI, CSPI_SCK, CSPI_SO, CSPI_SI);
+		// args: sck, mosi, mosi
+		musliCmd(MUSLI_CMD_CFG_PIO_SPI, cspi_sck, cspi_so, cspi_si);
 	} else {
 		musliInit(0);
 	}
 
 #endif
 
-	GPIO_SET_MODE(CSPI_SS, PI_OUTPUT);
-	GPIO_SET_MODE(CRESET, PI_OUTPUT);
-	GPIO_SET_MODE(CDONE, PI_INPUT);
+	GPIO_SET_MODE(cspi_ss, PI_OUTPUT);
+	GPIO_SET_MODE(creset, PI_OUTPUT);
+	GPIO_SET_MODE(cdone, PI_INPUT);
 
 	if (mem_type == MEM_TYPE_TEST) {
-      GPIO_WRITE(CRESET, 0);
+      GPIO_WRITE(creset, 0);
 		printf("test mode; holding in reset\n");
 		while(1) {
-			printf("cdone: %i\n", GPIO_READ(CDONE));
+			printf("cdone: %i\n", GPIO_READ(cdone));
 			usleep(500000);
 		};
 	}
@@ -332,51 +362,53 @@ int main(int argc, char *argv[]) {
 
 	if (mem_type == MEM_TYPE_SRAM) {
 
+		printf("writing to sram ...\n");
+
 		spi_swap = 1;
 
-		GPIO_SET_MODE(CSPI_SI, PI_OUTPUT);
-		GPIO_SET_MODE(CSPI_SO, PI_INPUT);
+		GPIO_SET_MODE(cspi_si, PI_OUTPUT);
+		GPIO_SET_MODE(cspi_so, PI_INPUT);
 
-		if ((actions & ACTION_MANUAL_RESET) == ACTION_MANUAL_RESET)
+		if ((options & OPTION_MANUAL_RESET) == OPTION_MANUAL_RESET)
 			printf("press reset button now\n");
 
 		// reset fpga into SPI slave configuration mode
-		GPIO_WRITE(CSPI_SS, 0);
-		GPIO_WRITE(CRESET, 0);
+		GPIO_WRITE(cspi_ss, 0);
+		GPIO_WRITE(creset, 0);
 		usleep(RST_DELAY);
-		printf("cdone: %i\n", GPIO_READ(CDONE));
+		printf("cdone: %i\n", GPIO_READ(cdone));
 
-		if ((actions & ACTION_MANUAL_RESET) == ACTION_MANUAL_RESET) {
+		if ((options & OPTION_MANUAL_RESET) == OPTION_MANUAL_RESET) {
 			usleep(2000000);
 			printf("release reset button now\n");
 			usleep(2000000);
 		}
 
-		GPIO_WRITE(CRESET, 1);
+		GPIO_WRITE(creset, 1);
 		usleep(RST_DELAY);
 
-		printf("cdone: %i\n", GPIO_READ(CDONE));
+		printf("cdone: %i\n", GPIO_READ(cdone));
 
-		GPIO_WRITE(CSPI_SCK, 1);
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_sck, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		spi_write(NULL, 1);
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 
 		spi_write(buf, len);
 
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		spi_write(NULL, 14);
 
 		usleep(100000);
-		printf("cdone: %i\n", GPIO_READ(CDONE));
+		printf("cdone: %i\n", GPIO_READ(cdone));
 
 	} else if (mem_type == MEM_TYPE_FLASH && mode == MODE_WRITE) {
 
 		spi_swap = 0;
 
 #ifdef BACKEND_PIGPIO
-		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
-		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+		GPIO_SET_MODE(cspi_si, PI_INPUT);
+		GPIO_SET_MODE(cspi_so, PI_OUTPUT);
 #endif
 
 		char fbuf[256];
@@ -385,25 +417,25 @@ int main(int argc, char *argv[]) {
 		int flen = len;
 
 		// hold fpga in reset mode
-		GPIO_WRITE(CRESET, 0);
+		GPIO_WRITE(creset, 0);
 		DELAY();
 
 #ifdef BACKEND_PIGPIO
-		GPIO_WRITE(CSPI_SCK, 0);
+		GPIO_WRITE(cspi_sck, 0);
 #endif
 
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		DELAY();
 
 		printf(" flash status: 0x%.2x\n", flash_status());
 
 		// exit power down mode
 		printf("exiting power down mode\n");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		DELAY();
 		spi_cmd(0xab);
 		DELAY();
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		usleep(5000);
 		printf(" flash status: 0x%.2x\n", flash_status());
 
@@ -412,11 +444,11 @@ int main(int argc, char *argv[]) {
 
 		// global block unlock
 		printf("global block unlock ...\n");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		DELAY();
 		spi_cmd(0x98);
 		DELAY();
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		usleep(5000);
 		printf(" flash status: 0x%.2x\n", flash_status());
 
@@ -435,12 +467,12 @@ int main(int argc, char *argv[]) {
 				flash_offset + (blk * blk_size));
 			flash_write_enable();
 
-			GPIO_WRITE(CSPI_SS, 0);
+			GPIO_WRITE(cspi_ss, 0);
 			DELAY();
 			spi_cmd(0x20);
 			spi_addr(flash_offset + (blk * blk_size));
 			DELAY();
-			GPIO_WRITE(CSPI_SS, 1);
+			GPIO_WRITE(cspi_ss, 1);
 
 			flash_wait();
 
@@ -459,18 +491,18 @@ int main(int argc, char *argv[]) {
 			flash_write_enable();
 
 			// program
-			GPIO_WRITE(CSPI_SS, 0);
+			GPIO_WRITE(cspi_ss, 0);
 			spi_cmd(0x02);
 			spi_addr(flash_offset + i);
 			spi_write(fbuf, flen);
-			GPIO_WRITE(CSPI_SS, 1);
+			GPIO_WRITE(cspi_ss, 1);
 
 			// read back
-			GPIO_WRITE(CSPI_SS, 0);
+			GPIO_WRITE(cspi_ss, 0);
 			spi_cmd(0x03);
 			spi_addr(flash_offset + i);
 			spi_read(vbuf, flen);
-			GPIO_WRITE(CSPI_SS, 1);
+			GPIO_WRITE(cspi_ss, 1);
 
 			if (!memcmp(fbuf, vbuf, flen)) {
 				printf("ok\n");
@@ -492,8 +524,8 @@ int main(int argc, char *argv[]) {
 		spi_swap = 0;
 
 #ifdef BACKEND_PIGPIO
-		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
-		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+		GPIO_SET_MODE(cspi_si, PI_INPUT);
+		GPIO_SET_MODE(cspi_so, PI_OUTPUT);
 #endif
 
 		printf("reading flash to %s ...\n", argv[optind]);
@@ -502,30 +534,30 @@ int main(int argc, char *argv[]) {
 		fp = fopen(argv[optind], "w");
 
 		// hold fpga in reset mode
-		GPIO_WRITE(CRESET, 0);
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(creset, 0);
+		GPIO_WRITE(cspi_ss, 1);
 
 #ifdef BACKEND_PIGPIO
-		GPIO_WRITE(CSPI_SCK, 1);
+		GPIO_WRITE(cspi_sck, 1);
 #endif
 
 		// exit power down mode
 		printf("exiting power down mode\n");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		DELAY();
 		spi_cmd(0xab);
 		DELAY();
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		usleep(5000);
 		printf(" flash status: 0x%.2x\n", flash_status());
 
 		// read JEDEC ID
 		printf("flash id: ");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		spi_cmd(0x9f);
 		for (int i = 0; i < 5; i++)
 			printf("%.2x ", spi_read_byte());
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		printf("\n");
 
 		printf("reading %i bytes @ addr 0x%x\n", flash_size, flash_offset);
@@ -535,11 +567,11 @@ int main(int argc, char *argv[]) {
 			printf("reading from 0x%.6x\n", flash_offset + (i * 256));
 
 			// read data from flash
-			GPIO_WRITE(CSPI_SS, 0);
+			GPIO_WRITE(cspi_ss, 0);
 			spi_cmd(0x03);
 			spi_addr(flash_offset + (i * 256));
 			spi_read(fbuf, 256);
-			GPIO_WRITE(CSPI_SS, 1);
+			GPIO_WRITE(cspi_ss, 1);
 
 			fwrite(fbuf, 256, 1, fp);
 
@@ -556,37 +588,37 @@ int main(int argc, char *argv[]) {
 		int mismatches = 0;
 
 #ifdef BACKEND_PIGPIO
-		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
-		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+		GPIO_SET_MODE(cspi_si, PI_INPUT);
+		GPIO_SET_MODE(cspi_so, PI_OUTPUT);
 #endif
 
 		printf("verifying flash ...\n");
 
 		// hold fpga in reset mode
-		GPIO_WRITE(CRESET, 0);
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(creset, 0);
+		GPIO_WRITE(cspi_ss, 1);
 
 #ifdef BACKEND_PIGPIO
-		GPIO_WRITE(CSPI_SCK, 1);
+		GPIO_WRITE(cspi_sck, 1);
 #endif
 
 		// exit power down mode
 		printf("exiting power down mode\n");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		DELAY();
 		spi_cmd(0xab);
 		DELAY();
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		usleep(5000);
 		printf(" flash status: 0x%.2x\n", flash_status());
 
 		// read JEDEC ID
 		printf("flash id: ");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		spi_cmd(0x9f);
 		for (int i = 0; i < 5; i++)
 			printf("%.2x ", spi_read_byte());
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		printf("\n");
 
 		printf("verifying %i bytes @ addr 0x%x\n", len, flash_offset);
@@ -598,11 +630,11 @@ int main(int argc, char *argv[]) {
 			printf(" reading %i bytes from 0x%.6x\n", flen, flash_offset + i);
 
 			// read data from flash
-			GPIO_WRITE(CSPI_SS, 0);
+			GPIO_WRITE(cspi_ss, 0);
 			spi_cmd(0x03);
 			spi_addr(flash_offset + i);
 			spi_read(fbuf, flen);
-			GPIO_WRITE(CSPI_SS, 1);
+			GPIO_WRITE(cspi_ss, 1);
 
 
 			if (memcmp(fbuf, buf + i, flen)) {
@@ -625,28 +657,28 @@ int main(int argc, char *argv[]) {
 
 		spi_swap = 0;
 
-		GPIO_SET_MODE(CSPI_SI, PI_INPUT);
-		GPIO_SET_MODE(CSPI_SO, PI_OUTPUT);
+		GPIO_SET_MODE(cspi_si, PI_INPUT);
+		GPIO_SET_MODE(cspi_so, PI_OUTPUT);
 
 		// hold fpga in reset mode
-		GPIO_WRITE(CRESET, 0);
+		GPIO_WRITE(creset, 0);
 		DELAY();
 
 #ifdef BACKEND_PIGPIO
-		GPIO_WRITE(CSPI_SCK, 0);
+		GPIO_WRITE(cspi_sck, 0);
 #endif
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		DELAY();
 
 		printf(" flash status: 0x%.2x\n", flash_status());
 
 		// exit power down mode
 		printf("exiting power down mode\n");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		DELAY();
 		spi_cmd(0xab);
 		DELAY();
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		usleep(5000);
 		printf(" flash status: 0x%.2x\n", flash_status());
 
@@ -655,11 +687,11 @@ int main(int argc, char *argv[]) {
 
 		// global block unlock
 		printf("global block unlock ...\n");
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		DELAY();
 		spi_cmd(0x98);
 		DELAY();
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 		usleep(5000);
 		printf(" flash status: 0x%.2x\n", flash_status());
 
@@ -667,11 +699,11 @@ int main(int argc, char *argv[]) {
 		printf(" erasing flash ...\n");
 		flash_write_enable();
 
-		GPIO_WRITE(CSPI_SS, 0);
+		GPIO_WRITE(cspi_ss, 0);
 		DELAY();
 		spi_cmd(0xc7);
 		DELAY();
-		GPIO_WRITE(CSPI_SS, 1);
+		GPIO_WRITE(cspi_ss, 1);
 
 		flash_wait();
 
@@ -679,12 +711,16 @@ int main(int argc, char *argv[]) {
 
 	}
 
-	if ((actions & ACTION_RESET) == ACTION_RESET) fpga_reset();
+	if ((options & OPTION_RESET) == OPTION_RESET) fpga_reset();
 
 	if (mode == MODE_WRITE)
 		free(buf);
 
-	spi_release();
+	if ((options & OPTION_BONBON) == OPTION_BONBON) {
+		musliInit(3);
+	} else {
+		spi_release();
+	}
 
 #ifdef BACKEND_LIBUSB
 	libusb_exit(NULL);
@@ -700,29 +736,29 @@ void fpga_reset(void) {
 
 	// release the SPI pins
 	spi_release();
-	GPIO_SET_MODE(CRESET, PI_OUTPUT);
-	GPIO_SET_MODE(CDONE, PI_INPUT);
+	GPIO_SET_MODE(creset, PI_OUTPUT);
+	GPIO_SET_MODE(cdone, PI_INPUT);
 
-	printf("cdone: %i\n", GPIO_READ(CDONE));
+	printf("cdone: %i\n", GPIO_READ(cdone));
 
 	// put fpga into master SPI mode and attempt self-configuration
-	GPIO_WRITE(CRESET, 0);
+	GPIO_WRITE(creset, 0);
 	usleep(100000);
-	GPIO_WRITE(CRESET, 1);
+	GPIO_WRITE(creset, 1);
 	usleep(100000);
 
-	printf("cdone: %i\n", GPIO_READ(CDONE));
+	printf("cdone: %i\n", GPIO_READ(cdone));
 	usleep(100000);
-	printf("cdone: %i\n", GPIO_READ(CDONE));
+	printf("cdone: %i\n", GPIO_READ(cdone));
 
 };
 
 void spi_release(void) {
 	musliInit(1);
-	GPIO_SET_MODE(CSPI_SCK, PI_INPUT);
-	GPIO_SET_MODE(CSPI_SO, PI_INPUT);
-	GPIO_SET_MODE(CSPI_SI, PI_INPUT);
-	GPIO_SET_MODE(CSPI_SS, PI_INPUT);
+	GPIO_SET_MODE(cspi_sck, PI_INPUT);
+	GPIO_SET_MODE(cspi_so, PI_INPUT);
+	GPIO_SET_MODE(cspi_si, PI_INPUT);
+	GPIO_SET_MODE(cspi_ss, PI_INPUT);
 }
 
 void spi_cmd(uint8_t cmd) {
@@ -739,13 +775,13 @@ void spi_cmd(uint8_t cmd) {
 #else
 	uint8_t data_bit;
 	for (int i = 7; i >= 0; i--) {
-		GPIO_WRITE(CSPI_SCK, 0);
+		GPIO_WRITE(cspi_sck, 0);
 		data_bit = (cmd >> i) & 0x01;
 		if (spi_swap)
-			GPIO_WRITE(CSPI_SI, data_bit);
+			GPIO_WRITE(cspi_si, data_bit);
 		else
-			GPIO_WRITE(CSPI_SO, data_bit);
-		GPIO_WRITE(CSPI_SCK, 1);
+			GPIO_WRITE(cspi_so, data_bit);
+		GPIO_WRITE(cspi_sck, 1);
 	}
 #endif
 
@@ -771,13 +807,13 @@ void spi_addr(uint32_t addr) {
 #else
 	uint8_t data_bit;
 	for (int i = 23; i >= 0; i--) {
-		GPIO_WRITE(CSPI_SCK, 0);
+		GPIO_WRITE(cspi_sck, 0);
 		data_bit = (addr >> i) & 0x01;
 		if (spi_swap)
-			GPIO_WRITE(CSPI_SI, data_bit);
+			GPIO_WRITE(cspi_si, data_bit);
 		else
-			GPIO_WRITE(CSPI_SO, data_bit);
-		GPIO_WRITE(CSPI_SCK, 1);
+			GPIO_WRITE(cspi_so, data_bit);
+		GPIO_WRITE(cspi_sck, 1);
 	}
 #endif
 
@@ -833,13 +869,13 @@ void spi_write(void *buf, uint32_t len) {
 			data_byte = *(unsigned char *)(buf + p);
 
 		for (int i = 7; i >= 0; i--) {
-			GPIO_WRITE(CSPI_SCK, 0);
+			GPIO_WRITE(cspi_sck, 0);
 			data_bit = (data_byte >> i) & 0x01;
 			if (spi_swap)
-				GPIO_WRITE(CSPI_SI, data_bit);
+				GPIO_WRITE(cspi_si, data_bit);
 			else
-				GPIO_WRITE(CSPI_SO, data_bit);
-			GPIO_WRITE(CSPI_SCK, 1);
+				GPIO_WRITE(cspi_so, data_bit);
+			GPIO_WRITE(cspi_sck, 1);
 		}
 
 	}
@@ -909,12 +945,12 @@ uint8_t spi_read_byte(void) {
 	uint8_t data_bit;
 	uint8_t data_byte = 0x00;
 	for (int i = 7; i >= 0; i--) {
-		GPIO_WRITE(CSPI_SCK, 0);
-		GPIO_WRITE(CSPI_SCK, 1);
+		GPIO_WRITE(cspi_sck, 0);
+		GPIO_WRITE(cspi_sck, 1);
 		if (spi_swap)
-			data_bit = GPIO_READ(CSPI_SO);
+			data_bit = GPIO_READ(cspi_so);
 		else
-			data_bit = GPIO_READ(CSPI_SI);
+			data_bit = GPIO_READ(cspi_si);
 		data_byte |= data_bit << i;
 	}
 
@@ -927,10 +963,10 @@ uint8_t flash_status(void) {
 
 	uint8_t status;
 
-	GPIO_WRITE(CSPI_SS, 0);
+	GPIO_WRITE(cspi_ss, 0);
 	spi_cmd(0x05);
 	status = spi_read_byte();
-	GPIO_WRITE(CSPI_SS, 1);
+	GPIO_WRITE(cspi_ss, 1);
 
 	return(status);
 
@@ -944,11 +980,11 @@ void flash_wait(void) {
 }
 
 void flash_write_enable(void) {
-	GPIO_WRITE(CSPI_SS, 0);
+	GPIO_WRITE(cspi_ss, 0);
 	DELAY();
 	spi_cmd(0x06);
 	DELAY();
-	GPIO_WRITE(CSPI_SS, 1);
+	GPIO_WRITE(cspi_ss, 1);
 	usleep(5000);
 }
 

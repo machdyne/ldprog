@@ -36,16 +36,19 @@ Display help:
 ## Supported Target Devices
 
   * [Riegel Computer](https://machdyne.com/product/riegel-computer/)
-  * [Kröte FPGA Board](https://machdyne.com/product/krote-fpga-board/)
+  * [Bonbon Computer](https://machdyne.com/product/bonbon-computer/)
   * [Brot FPGA Board](https://machdyne.com/product/brot-fpga-board/)
+  * [Kröte FPGA Board](https://machdyne.com/product/krote-fpga-board/)
+  * [Winzig Logic Module](https://machdyne.com/product/winzig-logic-module/)
 
 ## Supported Interface Devices
 
   * Raspberry Pi (GPIO)
   * Raspberry Pi Pico (USB)
+  * [Werkzeug](https://machdyne.com/product/werkzeug-multi-tool/) (USB)
   * [Müsli](https://machdyne.com/product/musli-usb-pmod/) (USB)
 
-Note: Raspberry Pi Pico must be loaded with the [Müsli firmware](https://github.com/machdyne/musli).
+Note: Raspberry Pi Pico and Werkzeug must be loaded with the [Müsli firmware](https://github.com/machdyne/musli).
 
 ### Raspberry Pi GPIO Default Wiring
 
@@ -62,14 +65,14 @@ Note: Raspberry Pi Pico must be loaded with the [Müsli firmware](https://github
 
   <img src="https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png" width="50%">
 
-### Müsli / Raspberry Pi Pico Default Wiring
+### Werkzeug / Müsli / Raspberry Pi Pico Default Wiring
 
-| Signal | GPIO# | Müsli Pin | Pico Pin | Target Pin |
-| ------ | ----- | --------- | ---------| ---------- |
-| CSPI\_SS | 9 | 8 | 12 | 1 |
-| CSPI\_SO | 8 | 7 | 11 | 4 |
-| CSPI\_SI | 11 | 10 | 15 | 3 |
-| CSPI\_SCK | 10 | 9 | 14 | 2 |
-| CRESET | 3 | 4 | 5 | 5 |
-| CDONE | 2 | 3 | 4 | 6 |
+| Signal | GPIO# | Müsli Pin | Werkzeug Pin | Pico Pin | Target Pin |
+| ------ | ----- | --------- | ------------ | ---------| ---------- |
+| CSPI\_SS | 9 | 8 | 12 | 12 | 1 |
+| CSPI\_SO | 8 | 7 | 11 | 11 | 4 |
+| CSPI\_SI | 11 | 10 | 14 | 15 | 3 |
+| CSPI\_SCK | 10 | 9 | 13 | 14 | 2 |
+| CRESET | 3 | 4 | 4 | 5 | 5 |
+| CDONE | 2 | 3 | 3 | 4 | 6 |
 

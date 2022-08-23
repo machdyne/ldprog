@@ -55,9 +55,9 @@ Note: Raspberry Pi Pico and Werkzeug must be loaded with the [Müsli firmware](h
 | Signal | GPIO# | Target Pin |
 | ------ | ----- | ---------- |
 | CSPI\_SS | 25 | 1 |
-| CSPI\_SO | 9 | 4 |
-| CSPI\_SI | 10 | 3 |
 | CSPI\_SCK | 11 | 2 |
+| CSPI\_SI | 10 | 3 |
+| CSPI\_SO | 9 | 4 |
 | CRESET | 23 | 5 |
 | CDONE | 24 | 6 |
 
@@ -65,14 +65,14 @@ Note: Raspberry Pi Pico and Werkzeug must be loaded with the [Müsli firmware](h
 
   <img src="https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png" width="50%">
 
-### Werkzeug / Müsli / Raspberry Pi Pico Default Wiring
+### Müsli / Werkzeug / Raspberry Pi Pico Default Wiring
 
 | Signal | GPIO# | Müsli Pin | Werkzeug Pin | Pico Pin | Target Pin |
 | ------ | ----- | --------- | ------------ | ---------| ---------- |
 | CSPI\_SS | 9 | 8 | 12 | 12 | 1 |
-| CSPI\_SO | 8 | 7 | 11 | 11 | 4 |
-| CSPI\_SI | 11 | 10 | 14 | 15 | 3 |
 | CSPI\_SCK | 10 | 9 | 13 | 14 | 2 |
+| CSPI\_SI | 11 | 10 | 14 | 15 | 3 |
+| CSPI\_SO | 8 | 7 | 11 | 11 | 4 |
 | CRESET | 3 | 4 | 4 | 5 | 5 |
 | CDONE | 2 | 3 | 3 | 4 | 6 |
 

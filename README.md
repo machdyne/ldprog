@@ -67,7 +67,7 @@ Note: Raspberry Pi Pico and Werkzeug must be loaded with the [Müsli firmware](h
 
 ### Müsli / Werkzeug / Raspberry Pi Pico Default Wiring
 
-| Signal | GPIO# | Müsli Pin | Werkzeug Pin | Pico Pin | Target Pin |
+| Signal | GPIO# | Müsli Pin | Werkzeug Pin | Pico Pin | Target Pin[^1] |
 | ------ | ----- | --------- | ------------ | ---------| ---------- |
 | CSPI\_SS | 9 | 8 | 12 | 12 | 1 |
 | CSPI\_SCK | 10 | 9 | 13 | 14 | 2 |
@@ -76,3 +76,4 @@ Note: Raspberry Pi Pico and Werkzeug must be loaded with the [Müsli firmware](h
 | CRESET | 3 | 4 | 4 | 5 | 5 |
 | CDONE | 2 | 3 | 3 | 4 | 6 |
 
+[^1]: For boards with a 6-pin ISP header.

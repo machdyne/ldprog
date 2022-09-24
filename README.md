@@ -37,6 +37,7 @@ Display help:
 
   * [Riegel Computer](https://machdyne.com/product/riegel-computer/)
   * [Bonbon Computer](https://machdyne.com/product/bonbon-computer/)
+  * [Keks Game Console](https://machdyne.com/product/keks-game-console/)
   * [Brot FPGA Board](https://machdyne.com/product/brot-fpga-board/)
   * [Kröte FPGA Board](https://machdyne.com/product/krote-fpga-board/)
   * [Winzig Logic Module](https://machdyne.com/product/winzig-logic-module/)

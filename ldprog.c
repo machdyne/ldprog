@@ -98,6 +98,8 @@ void show_usage(char **argv) {
       " -m\tmanual reset mode\n" \
       " -a\tusb bus and address are specified as first argument\n" \
       " -b\tbonbon mode\n" \
+      " -k\tkeks mode\n" \
+      " -i\teis mode\n" \
       " -w\twerkzeug mode (only for flashing MMODs via Werkzeugs PMOD)\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",
       argv[0]);
@@ -119,6 +121,8 @@ void show_usage(char **argv) {
 #define OPTION_ADDR 4
 #define OPTION_BONBON 8
 #define OPTION_WERKZEUG 16
+#define OPTION_KEKS 32
+#define OPTION_EIS 64
 
 int debug = 0;
 int spi_swap = 0;
@@ -142,7 +146,7 @@ int main(int argc, char *argv[]) {
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdvmetagbcDw")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdvmetagbcDwki")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -157,6 +161,8 @@ int main(int argc, char *argv[]) {
          case 'r': options |= OPTION_RESET; break;
          case 'm': options |= OPTION_MANUAL_RESET; break;
          case 'b': options |= OPTION_BONBON; break;
+         case 'k': options |= OPTION_KEKS; break;
+         case 'i': options |= OPTION_EIS; break;
          case 'w': options |= OPTION_WERKZEUG; break;
          case 'D': debug = 1; break;
       }
@@ -186,6 +192,24 @@ int main(int argc, char *argv[]) {
 		cspi_sck = 26;
 		cdone = 18;
 		creset = 19;
+	}
+
+	if ((options & OPTION_KEKS) == OPTION_KEKS) {
+		cspi_ss = 25;
+		cspi_so = 24;
+		cspi_si = 27;
+		cspi_sck = 26;
+		cdone = 22;
+		creset = 23;
+	}
+
+	if ((options & OPTION_EIS) == OPTION_EIS) {
+		cspi_ss = 22;
+		cspi_so = 24;
+		cspi_si = 27;
+		cspi_sck = 26;
+		cdone = 3;
+		creset = 2;
 	}
 
 	if (((options & OPTION_WERKZEUG) == OPTION_WERKZEUG) && mem_type == MEM_TYPE_FLASH) {
@@ -716,7 +740,8 @@ int main(int argc, char *argv[]) {
 	if (mode == MODE_WRITE)
 		free(buf);
 
-	if ((options & OPTION_BONBON) == OPTION_BONBON) {
+	if ( ((options & OPTION_BONBON) == OPTION_BONBON) ||
+			((options & OPTION_KEKS) == OPTION_KEKS) ) {
 		musliInit(3);
 	} else {
 		spi_release();

@@ -50,7 +50,7 @@ Display help:
   * [Werkzeug](https://machdyne.com/product/werkzeug-multi-tool/) (USB)
   * [Müsli](https://machdyne.com/product/musli-usb-pmod/) (USB)
 
-Note: Raspberry Pi Pico and Werkzeug must be loaded with the [Müsli firmware](https://github.com/machdyne/musli).
+Note: Raspberry Pi Pico and Werkzeug must be loaded with the [Müsli firmware](https://github.com/machdyne/musli). The firmware for Keks, Eis and Bonbon provide a built-in interface device.
 
 ### Raspberry Pi GPIO Default Wiring
 

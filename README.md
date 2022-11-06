@@ -36,6 +36,7 @@ Display help:
 ## Supported Target Devices
 
   * [Riegel Computer](https://machdyne.com/product/riegel-computer/)
+  * [Eis Computer](https://machdyne.com/product/eis-computer/)
   * [Bonbon Computer](https://machdyne.com/product/bonbon-computer/)
   * [Keks Game Console](https://machdyne.com/product/keks-game-console/)
   * [Brot FPGA Board](https://machdyne.com/product/brot-fpga-board/)

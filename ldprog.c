@@ -506,9 +506,13 @@ int main(int argc, char *argv[]) {
 
 		while (i < len) {
 
+			int maxtries = 16;
+
 			if (len - i >= 256) flen = 256; else flen = len - i;
 
 			memcpy(fbuf, buf + i, flen);
+
+			tryagain:
 
 			printf(" writing %i bytes @ %.6x ... ", flen, flash_offset + i);
 
@@ -531,7 +535,14 @@ int main(int argc, char *argv[]) {
 			if (!memcmp(fbuf, vbuf, flen)) {
 				printf("ok\n");
 			} else {
-				printf("failed\n");
+				printf("failed; retrying\n");
+				--maxtries;
+				if (maxtries) {
+					goto tryagain;
+				} else {
+					printf("failed to write; aborting\n");
+					exit(1);
+				}
 			}
 
 			i += flen;
@@ -795,6 +806,8 @@ void spi_cmd(uint8_t cmd) {
 	lbuf[0] = MUSLI_CMD_SPI_WRITE;
 	lbuf[1] = 1;
 	lbuf[4] = cmd;
+	if (debug)
+  		printf(" spi_cmd [%.2x]\n", cmd);
   	libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 		&actual, 0);
 #else

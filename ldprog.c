@@ -888,7 +888,12 @@ void spi_write(void *buf, uint32_t len) {
   		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 			&actual, 0);
 
-		if (debug) printf("spi_write: [%i/%i]\n", offset, len);
+		if (debug) {
+	  		printf("spi_write: [%i/%i]: ", offset, len);
+			for (int z = 0; z < len; z++)
+	  		  printf("[%.2x]", lbuf[z]);
+			printf("\n");
+		}
 
 		rlen -= MUSLI_BLK_SIZE;
 		offset += MUSLI_BLK_SIZE;
@@ -896,10 +901,15 @@ void spi_write(void *buf, uint32_t len) {
 	}
 
 	if (rlen) {
-		if (debug) printf("spi_write: [%i/%i]\n", offset, len);
 		bzero(lbuf, 64);
 		lbuf[0] = MUSLI_CMD_SPI_WRITE;
 		lbuf[1] = rlen;
+		if (debug) {
+	  		printf("spi_write: [%i/%i]: ", offset, len);
+			for (int z = 0; z < len; z++)
+	  		  printf("[%.2x]", lbuf[z]);
+			printf("\n");
+		}
 		if (buf != NULL)
 			memcpy(lbuf + 4, buf + offset, rlen);
   		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
@@ -953,8 +963,12 @@ void spi_read(void *buf, uint32_t len) {
 		if (buf != NULL)
 			memcpy(buf + offset, lbuf, 64);
 
-		if (debug)
-	  		printf("spi_read: %i/%d [%i/%i]\n", actual, 64, offset, len);
+		if (debug) {
+	  		printf("spi_read: %i/%d [%i/%i]: ", actual, 64, offset, len);
+			for (int z = 0; z < actual; z++)
+	  		  printf("[%.2x]", lbuf[z]);
+			printf("\n");
+		}
 
 		rlen -= 64;
 		offset += 64;
@@ -966,6 +980,13 @@ void spi_read(void *buf, uint32_t len) {
 		musliCmd(MUSLI_CMD_SPI_READ, 64, 0, 0);
   		libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), lbuf, 64,
 			&actual, 0);
+
+		if (debug) {
+	  		printf("spi_read: %i/%d [%i/%i]: ", actual, 64, offset, len);
+			for (int z = 0; z < actual; z++)
+	  		  printf("[%.2x]", lbuf[z]);
+			printf("\n");
+		}
 
 		if (buf != NULL)
 			memcpy(buf + offset, lbuf, rlen);

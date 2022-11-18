@@ -101,6 +101,7 @@ void show_usage(char **argv) {
       " -k\tkeks mode\n" \
       " -i\teis mode\n" \
       " -w\twerkzeug mode (only for flashing MMODs via Werkzeugs PMOD)\n" \
+      " -n\tdon't retry block if flashing fails\n" \
 		"\nWARNING: writing to flash erases 4K blocks starting at offset\n",
       argv[0]);
 }
@@ -126,6 +127,7 @@ void show_usage(char **argv) {
 
 int debug = 0;
 int spi_swap = 0;
+int retry_mode = 1;
 
 uint8_t cspi_ss = CSPI_SS;
 uint8_t cspi_si = CSPI_SI;
@@ -146,7 +148,7 @@ int main(int argc, char *argv[]) {
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdvmetagbcDwki")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdvmetagbcDwkin")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -164,6 +166,7 @@ int main(int argc, char *argv[]) {
          case 'k': options |= OPTION_KEKS; break;
          case 'i': options |= OPTION_EIS; break;
          case 'w': options |= OPTION_WERKZEUG; break;
+         case 'n': retry_mode = 0; break;
          case 'D': debug = 1; break;
       }
    }
@@ -540,13 +543,17 @@ int main(int argc, char *argv[]) {
 			if (!memcmp(fbuf, vbuf, flen)) {
 				printf("ok\n");
 			} else {
-				printf("failed; retrying\n");
-				--maxtries;
-				if (maxtries) {
-					goto tryagain;
+				if (retry_mode) {
+					printf("failed; retrying\n");
+					--maxtries;
+					if (maxtries) {
+						goto tryagain;
+					} else {
+						printf("failed to write; aborting\n");
+						exit(1);
+					}
 				} else {
-					printf("failed to write; aborting\n");
-					exit(1);
+					printf("failed\n");
 				}
 			}
 

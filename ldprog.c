@@ -67,7 +67,7 @@
 #define RST_DELAY 250000
 #define QSPI_MODE false
 
-#define DELAY()
+#define DELAY() usleep(1000);
 
 void fpga_reset(void);
 void spi_release(void);
@@ -370,6 +370,11 @@ int main(int argc, char *argv[]) {
 	if (mode == MODE_WRITE || mode == MODE_VERIFY) {
 
 		fp = fopen(argv[optind], "r");
+
+		if (fp == NULL) {
+			fprintf(stderr, "unable to open file: %s\n", argv[optind]);
+			exit(1);
+		}
 
 		fseek(fp, 0L, SEEK_END);
 		len = ftell(fp);

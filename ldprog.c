@@ -889,9 +889,9 @@ void spi_write(void *buf, uint32_t len) {
 			&actual, 0);
 
 		if (debug) {
-	  		printf("spi_write: [%i/%i]: ", offset, len);
-			for (int z = 0; z < len; z++)
-	  		  printf("[%.2x]", lbuf[z]);
+  			printf("spi_write: [%i/%i]: ", offset, len);
+			for (int z = 0; z < 64; z++)
+  			  printf("[%.2x]", lbuf[z]);
 			printf("\n");
 		}
 
@@ -905,9 +905,9 @@ void spi_write(void *buf, uint32_t len) {
 		lbuf[0] = MUSLI_CMD_SPI_WRITE;
 		lbuf[1] = rlen;
 		if (debug) {
-	  		printf("spi_write: [%i/%i]: ", offset, len);
-			for (int z = 0; z < len; z++)
-	  		  printf("[%.2x]", lbuf[z]);
+  			printf("spi_write: [%i/%i]: ", offset, len);
+			for (int z = 0; z < rlen; z++)
+  			  printf("[%.2x]", lbuf[z]);
 			printf("\n");
 		}
 		if (buf != NULL)

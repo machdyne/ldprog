@@ -526,6 +526,8 @@ int main(int argc, char *argv[]) {
 
 			flash_write_enable();
 
+			printf("[status: 0x%.2x] ", flash_status());
+
 			// program
 			GPIO_WRITE(cspi_ss, 0);
 			spi_cmd(0x02);

@@ -533,6 +533,8 @@ int main(int argc, char *argv[]) {
 			spi_write(fbuf, flen);
 			GPIO_WRITE(cspi_ss, 1);
 
+			flash_wait();
+
 			// read back
 			GPIO_WRITE(cspi_ss, 0);
 			spi_cmd(0x03);
@@ -558,8 +560,6 @@ int main(int argc, char *argv[]) {
 			}
 
 			i += flen;
-
-			flash_wait();
 
 		}
 		printf("done writing.\n");

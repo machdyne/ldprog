@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
 		cspi_so = 28;
 		cspi_si = 27;
 		cspi_sck = 26;
-		cdone = 18;
+		cdone = 17;
 		creset = 19;
 	}
 

@@ -99,6 +99,7 @@ void show_usage(char **argv) {
       " -a\tusb bus and address are specified as first argument\n" \
       " -b\tbonbon mode\n" \
       " -k\tkeks mode\n" \
+      " -K\tkolibri mode\n" \
       " -i\teis mode\n" \
       " -w\twerkzeug mode (only for flashing MMODs via Werkzeugs PMOD)\n" \
       " -n\tdon't retry block if flashing fails\n" \
@@ -124,6 +125,7 @@ void show_usage(char **argv) {
 #define OPTION_WERKZEUG 16
 #define OPTION_KEKS 32
 #define OPTION_EIS 64
+#define OPTION_KOLIBRI 128
 
 int debug = 0;
 int spi_swap = 0;
@@ -148,7 +150,7 @@ int main(int argc, char *argv[]) {
 	int gpionum;
 	int gpioval = -1;
 
-   while ((opt = getopt(argc, argv, "hsfrdvmetagbcDwkin")) != -1) {
+   while ((opt = getopt(argc, argv, "hsfrdvmetagbcDwkKin")) != -1) {
       switch (opt) {
          case 'h': show_usage(argv); return(0); break;
          case 's': mem_type = MEM_TYPE_SRAM; mode = MODE_WRITE; break;
@@ -165,6 +167,7 @@ int main(int argc, char *argv[]) {
          case 'b': options |= OPTION_BONBON; break;
          case 'k': options |= OPTION_KEKS; break;
          case 'i': options |= OPTION_EIS; break;
+         case 'K': options |= OPTION_KOLIBRI; break;
          case 'w': options |= OPTION_WERKZEUG; break;
          case 'n': retry_mode = 0; break;
          case 'D': debug = 1; break;
@@ -213,6 +216,15 @@ int main(int argc, char *argv[]) {
 		cspi_sck = 26;
 		cdone = 3;
 		creset = 2;
+	}
+
+	if ((options & OPTION_KOLIBRI) == OPTION_KOLIBRI) {
+		cspi_ss = 13;
+		cspi_so = 12;
+		cspi_si = 11;
+		cspi_sck = 14;
+		cdone = 10;
+		creset = 15;
 	}
 
 	if (((options & OPTION_WERKZEUG) == OPTION_WERKZEUG) && mem_type == MEM_TYPE_FLASH) {

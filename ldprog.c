@@ -778,7 +778,8 @@ int main(int argc, char *argv[]) {
 		free(buf);
 
 	if ( ((options & OPTION_BONBON) == OPTION_BONBON) ||
-			((options & OPTION_KEKS) == OPTION_KEKS) ) {
+			((options & OPTION_KEKS) == OPTION_KEKS) ||
+			((options & OPTION_KOLIBRI) == OPTION_KOLIBRI) ) {
 		musliInit(3);
 	} else {
 		spi_release();

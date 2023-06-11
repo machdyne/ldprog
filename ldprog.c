@@ -780,7 +780,9 @@ int main(int argc, char *argv[]) {
 	if ( ((options & OPTION_BONBON) == OPTION_BONBON) ||
 			((options & OPTION_KEKS) == OPTION_KEKS) ||
 			((options & OPTION_KOLIBRI) == OPTION_KOLIBRI) ) {
+#ifdef BACKEND_LIBUSB
 		musliInit(3);
+#endif
 	} else {
 		spi_release();
 	}
@@ -817,7 +819,9 @@ void fpga_reset(void) {
 };
 
 void spi_release(void) {
+#ifdef BACKEND_LIBUSB
 	musliInit(1);
+#endif
 	GPIO_SET_MODE(cspi_sck, PI_INPUT);
 	GPIO_SET_MODE(cspi_so, PI_INPUT);
 	GPIO_SET_MODE(cspi_si, PI_INPUT);

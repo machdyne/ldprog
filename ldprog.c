@@ -5,9 +5,23 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <string.h>
 #include <strings.h>
+
+#define MUSLI_CMD_READY 0x00
+#define MUSLI_CMD_INIT 0x01
+#define MUSLI_CMD_GPIO_SET_DIR 0x10
+#define MUSLI_CMD_GPIO_DISABLE_PULLS 0x11
+#define MUSLI_CMD_GPIO_PULL_UP 0x12
+#define MUSLI_CMD_GPIO_PULL_DOWN 0x13
+#define MUSLI_CMD_GPIO_GET 0x20
+#define MUSLI_CMD_GPIO_PUT 0x21
+#define MUSLI_CMD_SPI_READ 0x80
+#define MUSLI_CMD_SPI_WRITE 0x81
+#define MUSLI_CMD_CFG_PIO_SPI 0x8f
+#define MUSLI_CMD_RESET 0xf0
 
 #ifdef BACKEND_PIGPIO
 
@@ -40,24 +54,36 @@
  #define CDONE		2
  #define CRESET	3
  #define MUSLI_BLK_SIZE 60
- #define MUSLI_CMD_READY 0x00
- #define MUSLI_CMD_INIT 0x01
- #define MUSLI_CMD_GPIO_SET_DIR 0x10
- #define MUSLI_CMD_GPIO_DISABLE_PULLS 0x11
- #define MUSLI_CMD_GPIO_PULL_UP 0x12
- #define MUSLI_CMD_GPIO_PULL_DOWN 0x13
- #define MUSLI_CMD_GPIO_GET 0x20
- #define MUSLI_CMD_GPIO_PUT 0x21
- #define MUSLI_CMD_SPI_READ 0x80
- #define MUSLI_CMD_SPI_WRITE 0x81
- #define MUSLI_CMD_CFG_PIO_SPI 0x8f
- #define MUSLI_CMD_RESET 0xf0
  void musliInit(uint8_t mode);
  void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3);
  void musliSetMode(uint8_t pin, uint8_t dir);
  void musliWrite(uint8_t pin, uint8_t bit);
  uint8_t musliRead(uint8_t pin);
  struct libusb_device_handle *usb_dh = NULL;
+
+#elif BACKEND_HIDAPI
+
+ #include "hidapi.h"
+ #define GPIO_WRITE musliWrite
+ #define GPIO_READ musliRead
+ #define GPIO_SET_MODE musliSetMode
+ #define PI_INPUT 0
+ #define PI_OUTPUT 1
+ #define USB_MFG_ID 0x2e8a
+ #define USB_DEV_ID 0x1025
+ #define CSPI_SS	4
+ #define CSPI_SO	7
+ #define CSPI_SI	6
+ #define CSPI_SCK	5
+ #define CDONE		2
+ #define CRESET	3
+ #define MUSLI_BLK_SIZE 128
+ void musliInit(uint8_t mode);
+ void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3);
+ void musliSetMode(uint8_t pin, uint8_t dir);
+ void musliWrite(uint8_t pin, uint8_t bit);
+ uint8_t musliRead(uint8_t pin);
+ struct hid_device *usb_hd = NULL;
 
 #endif
 
@@ -332,6 +358,16 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
+#elif BACKEND_HIDAPI
+
+	usb_hd = (struct hid_device *)hid_open( USB_MFG_ID, USB_DEV_ID, L"0000");
+	if (!usb_hd) {
+		fprintf( stderr, "Error: Failed to open device.\n" );
+		exit(1);
+	}
+
+#endif
+
 	if (mode == MODE_CMD) {
 
 		if (debug)
@@ -365,8 +401,6 @@ int main(int argc, char *argv[]) {
 	} else {
 		musliInit(0);
 	}
-
-#endif
 
 	GPIO_SET_MODE(cspi_ss, PI_OUTPUT);
 	GPIO_SET_MODE(creset, PI_OUTPUT);
@@ -617,11 +651,13 @@ int main(int argc, char *argv[]) {
 		printf(" flash status: 0x%.2x\n", flash_status());
 
 		// read JEDEC ID
+		uint8_t idbuf[5];
 		printf("flash id: ");
 		GPIO_WRITE(cspi_ss, spi_ss_active);
 		spi_cmd(0x9f);
+		spi_read(idbuf, 5);
 		for (int i = 0; i < 5; i++)
-			printf("%.2x ", spi_read_byte());
+			printf("%.2x ", idbuf[i]);
 		GPIO_WRITE(cspi_ss, spi_ss_inactive);
 		printf("\n");
 
@@ -833,7 +869,8 @@ void spi_release(void) {
 }
 
 void spi_cmd(uint8_t cmd) {
-
+	if (debug)
+  		printf(" spi_cmd [%.2x]\n", cmd);
 #ifdef BACKEND_LIBUSB
   	int actual;
 	uint8_t lbuf[64];
@@ -841,10 +878,15 @@ void spi_cmd(uint8_t cmd) {
 	lbuf[0] = MUSLI_CMD_SPI_WRITE;
 	lbuf[1] = 1;
 	lbuf[4] = cmd;
-	if (debug)
-  		printf(" spi_cmd [%.2x]\n", cmd);
   	libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 		&actual, 0);
+#elif BACKEND_HIDAPI
+	uint8_t lbuf[255];
+	bzero(lbuf, 255);
+	lbuf[2] = MUSLI_CMD_SPI_WRITE;
+	lbuf[3] = 1;
+	lbuf[6] = cmd;
+	hidapi_send(lbuf);
 #else
 	uint8_t data_bit;
 	for (int i = 7; i >= 0; i--) {
@@ -877,6 +919,15 @@ void spi_addr(uint32_t addr) {
 			lbuf[4], lbuf[5], lbuf[6], lbuf[7]);
   	libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 		&actual, 0);
+#elif BACKEND_HIDAPI
+	uint8_t lbuf[255];
+	bzero(lbuf, 255);
+	lbuf[2] = MUSLI_CMD_SPI_WRITE;
+	lbuf[3] = 3;
+	lbuf[6] = addr >> 16;
+	lbuf[7] = addr >> 8;
+	lbuf[8] = addr;
+	hidapi_send(lbuf);
 #else
 	uint8_t data_bit;
 	for (int i = 23; i >= 0; i--) {
@@ -938,6 +989,51 @@ void spi_write(void *buf, uint32_t len) {
   		libusb_bulk_transfer(usb_dh, (1 | LIBUSB_ENDPOINT_OUT), lbuf, 64,
 			&actual, 0);
 	}
+
+#elif BACKEND_HIDAPI
+
+  	int actual;
+	uint8_t lbuf[255];
+
+	uint32_t rlen = len;
+	uint32_t offset = 0;
+
+	for (int blk = 0; blk < len / MUSLI_BLK_SIZE; blk++) {
+
+		bzero(lbuf, 255);
+		lbuf[2] = MUSLI_CMD_SPI_WRITE;
+		lbuf[3] = MUSLI_BLK_SIZE;
+		if (buf != NULL)
+			memcpy(lbuf + 6, buf + offset, MUSLI_BLK_SIZE);
+		hidapi_send(lbuf);
+
+		if (debug) {
+  			printf("spi_write: [%i/%i]: ", offset, len);
+			for (int z = 0; z < len; z++)
+  			  printf("[%.2x]", lbuf[z]);
+			printf("\n");
+		}
+
+		rlen -= MUSLI_BLK_SIZE;
+		offset += MUSLI_BLK_SIZE;
+
+	}
+
+	if (rlen) {
+		bzero(lbuf, 255);
+		lbuf[2] = MUSLI_CMD_SPI_WRITE;
+		lbuf[3] = rlen;
+		if (debug) {
+  			printf("spi_write: [%i/%i]: ", offset, len);
+			for (int z = 0; z < rlen; z++)
+  			  printf("[%.2x]", lbuf[z]);
+			printf("\n");
+		}
+		if (buf != NULL)
+			memcpy(lbuf + 6, buf + offset, rlen);
+		hidapi_send(lbuf);
+	}
+
 
 #else
 
@@ -1014,6 +1110,54 @@ void spi_read(void *buf, uint32_t len) {
 		if (buf != NULL)
 			memcpy(buf + offset, lbuf, rlen);
 	}
+
+#elif BACKEND_HIDAPI
+
+	uint8_t lbuf[255];
+
+	uint32_t rlen = len;
+	uint32_t offset = 0;
+
+	for (int blk = 0; blk < len / MUSLI_BLK_SIZE; blk++) {
+
+		bzero(lbuf, 255);
+		lbuf[2] = MUSLI_CMD_SPI_READ;
+		lbuf[3] = MUSLI_BLK_SIZE;
+		hidapi_send_get(lbuf);
+
+		if (buf != NULL)
+			memcpy(buf + offset, lbuf + 2, MUSLI_BLK_SIZE);
+
+		if (debug) {
+	  		printf("spi_read: %d [%i/%i]: ", MUSLI_BLK_SIZE, offset, len);
+			for (int z = 0; z < MUSLI_BLK_SIZE; z++)
+	  		  printf("[%.2x]", lbuf[z+2]);
+			printf("\n");
+		}
+
+		rlen -= 128;
+		offset += 128;
+
+	}
+
+	if (rlen) {
+		bzero(lbuf, 255);
+		lbuf[2] = MUSLI_CMD_SPI_READ;
+		lbuf[3] = rlen;
+		hidapi_send_get(lbuf);
+
+		if (debug) {
+	  		printf("spi_read: %d [%i/%i]: ", rlen, offset, len);
+			for (int z = 0; z < len; z++)
+	  		  printf("[%.2x]", lbuf[z+2]);
+			printf("\n");
+		}
+
+		if (buf != NULL)
+			memcpy(buf + offset, lbuf + 2, rlen);
+	}
+
+
 #else
 	uint8_t data_byte;
 	for (int p = 0; p < len; p++) {
@@ -1035,6 +1179,13 @@ uint8_t spi_read_byte(void) {
    libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), buf, 64,
       &actual, 0);
 	return buf[0];
+#elif BACKEND_HIDAPI
+	uint8_t buf[255];
+	buf[2] = MUSLI_CMD_SPI_READ;
+	buf[3] = 1;
+	hidapi_send_get(buf);
+	//printf(" spi_read_byte = %.2x\n", buf[2]);
+	return buf[2];
 #else
 	uint8_t data_bit;
 	uint8_t data_byte = 0x00;
@@ -1068,7 +1219,7 @@ uint8_t flash_status(void) {
 
 void flash_wait(void) {
 	int status;
-	while (((status = flash_status()) & 0x01) == 0x01) {
+	while (flash_status() & 0x01 == 0x01) {
 		usleep(100);
 	}
 }
@@ -1121,6 +1272,92 @@ uint8_t musliRead(uint8_t pin) {
    libusb_bulk_transfer(usb_dh, (2 | LIBUSB_ENDPOINT_IN), buf, 64,
       &actual, 0);
 	return buf[0];
+}
+
+#elif BACKEND_HIDAPI
+
+void hidapi_send(uint8_t *buf) {
+	buf[0] = 0xaa;
+	buf[1] = 0x00;
+	int r = hid_send_feature_report(usb_hd, buf, 255);
+	if (r != 255) {
+		fprintf(stderr, "hidapi_send failed (r = %d)\n", r);
+	}
+	retry:;
+	r = hid_get_feature_report(usb_hd, buf, 255);
+	// printf("buf: %x %x %x %x %x\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+	if (r != 255 || buf[0] != 0xaa) {
+		fprintf(stderr, "hidapi_get failed (r = %d)\n", r);
+	}
+	if (buf[1] != 0x01) goto retry;
+}
+
+void hidapi_send_get(uint8_t *buf) {
+	buf[0] = 0xaa;
+	buf[1] = 0x00;
+	int r = hid_send_feature_report(usb_hd, buf, 255);
+	if (r != 255) {
+		fprintf(stderr, "hidapi_send_get failed (r = %d)\n", r);
+	}
+	retry:;
+	r = hid_get_feature_report(usb_hd, buf, 255);
+	// printf("buf: %x %x %x %x %x\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+	if (r != 255 || buf[0] != 0xaa) {
+		fprintf(stderr, "hidapi_send_get failed (r = %d)\n", r);
+	}
+	if (buf[1] != 0x01) goto retry;
+}
+
+void hidapi_get(uint8_t *buf) {
+	retry:;
+	int r = hid_get_feature_report(usb_hd, buf, 255);
+	// printf("buf: %x %x %x %x %x\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+	if (r != 255 || buf[0] != 0xaa) {
+		fprintf(stderr, "hidapi_get failed (r = %d)\n", r);
+	}
+	printf("A: %2x\n", buf[1]);
+	if (buf[1] != 0x01) goto retry;
+	printf("B: %2x\n", buf[1]);
+}
+
+void musliInit(uint8_t mode) {
+	musliCmd(MUSLI_CMD_INIT, mode, 0, 0);
+}
+
+void musliCmd(uint8_t cmd, uint8_t arg1, uint8_t arg2, uint8_t arg3) {
+   int actual;
+	uint8_t buf[255];
+	bzero(buf, 255);
+	buf[0] = 0xaa;
+	buf[1] = 0x00;
+	buf[2] = cmd;
+	buf[3] = arg1;
+	buf[4] = arg2;
+	buf[5] = arg3;
+	if (debug)
+		printf("send cmd [%.2x %.2x %.2x %.2x]\n", cmd, arg1, arg2, arg3);
+	hidapi_send(buf);
+}
+
+// bit banging interface
+
+void musliSetMode(uint8_t pin, uint8_t dir) {
+	musliCmd(MUSLI_CMD_GPIO_SET_DIR, pin, dir, 0);
+}
+
+void musliWrite(uint8_t pin, uint8_t val) {
+	musliCmd(MUSLI_CMD_GPIO_PUT, pin, val, 0);
+}
+
+uint8_t musliRead(uint8_t pin) {
+	uint8_t buf[255];
+	bzero(buf, 255);
+	buf[0] = 0xaa;
+	buf[1] = 0x00;
+	buf[2] = MUSLI_CMD_GPIO_GET;
+	buf[3] = pin;
+	hidapi_send_get(buf);
+	return buf[2];
 }
 
 #endif
